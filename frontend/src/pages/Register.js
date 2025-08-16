@@ -12,13 +12,20 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    
+    console.log('Registration attempt:', { name, email, password: password ? '[PROVIDED]' : '[MISSING]' });
+    
     try {
-      await axios.post(
-      "http://localhost:5001/api/auth/register",
-      { name, email, password }
+      const response = await axios.post(
+        "http://localhost:5001/api/auth/register",
+        { name, email, password }
       );
+      
+      console.log('Registration successful:', response.data);
       navigate("/login");
     } catch (err) {
+      console.error('Registration error:', err);
+      console.error('Error response:', err.response?.data);
       setError(err.response?.data?.message || "Registration failed");
     }
   };

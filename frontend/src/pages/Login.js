@@ -12,6 +12,8 @@ export default function Login({ setUser }) {
     e.preventDefault();
     setError("");
 
+    console.log('Attempting login with:', { email, password });
+
     try {
       const res = await axios.post(
         "http://localhost:5001/api/auth/login", // match your backend port
@@ -19,12 +21,16 @@ export default function Login({ setUser }) {
         { withCredentials: true }
       );
 
+      console.log('Login response:', res.data);
+      
       // store user info in state
       setUser(res.data.user);
 
-      // redirect to User page
-      navigate("/user");
+      // redirect to Profile page for editing
+      navigate("/profile");
     } catch (err) {
+      console.error('Login error:', err);
+      console.error('Error response:', err.response?.data);
       setError(err.response?.data?.message || "Login failed");
     }
   };
