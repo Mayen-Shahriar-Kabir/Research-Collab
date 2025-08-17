@@ -10,7 +10,7 @@ const Home = ({ user }) => {
     <div className="home-container">
       <div className="hero-section">
         <div className="hero-content">
-          <h1>T1 Research Portal</h1>
+          <h1>Reseach Portal</h1>
           <p>Discover research opportunities, manage projects, and collaborate with faculty and students</p>
         </div>
       </div>

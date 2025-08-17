@@ -18,7 +18,7 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Navbar />
+        <Navbar user={user} setUser={setUser} />
         <div className="pages">
           <Routes>
             <Route path='/' element={<Navigate to="/login" />} />

@@ -8,12 +8,14 @@ export default function User({ user }) {
     messages: 0
   });
 
-  const [recentActivity, setRecentActivity] = useState([
-    { id: 1, type: "project", message: "Applied to Machine Learning Research", time: "2 hours ago", icon: "🔬" },
-    { id: 2, type: "task", message: "Completed literature review", time: "1 day ago", icon: "✅" },
-    { id: 3, type: "message", message: "New message from Dr. Smith", time: "2 days ago", icon: "💬" },
-    { id: 4, type: "project", message: "Joined Data Science Project", time: "3 days ago", icon: "🚀" }
-  ]);
+  const [recentActivity, setRecentActivity] = useState([]);
+
+  const hasWork =
+    stats.totalProjects > 0 ||
+    stats.activeTasks > 0 ||
+    stats.completedTasks > 0 ||
+    stats.messages > 0 ||
+    recentActivity.length > 0;
 
   const quickActions = [
     { title: "Browse Projects", description: "Find new research opportunities", icon: "🔍", link: "/home", color: "#667eea" },
@@ -91,15 +93,19 @@ export default function User({ user }) {
         <div className="dashboard-section">
           <h2>Recent Activity</h2>
           <div className="activity-list">
-            {recentActivity.map(activity => (
-              <div key={activity.id} className="activity-item">
-                <div className="activity-icon">{activity.icon}</div>
-                <div className="activity-content">
-                  <p className="activity-message">{activity.message}</p>
-                  <span className="activity-time">{activity.time}</span>
+            {recentActivity.length === 0 ? (
+              <div className="activity-empty">No recent activity yet.</div>
+            ) : (
+              recentActivity.map(activity => (
+                <div key={activity.id} className="activity-item">
+                  <div className="activity-icon">{activity.icon}</div>
+                  <div className="activity-content">
+                    <p className="activity-message">{activity.message}</p>
+                    <span className="activity-time">{activity.time}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -107,29 +113,33 @@ export default function User({ user }) {
       {/* Progress Section */}
       <div className="progress-section">
         <h2>Your Progress</h2>
-        <div className="progress-cards">
-          <div className="progress-card">
-            <h3>Research Skills</h3>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{width: '75%'}}></div>
+        {hasWork ? (
+          <div className="progress-cards">
+            <div className="progress-card">
+              <h3>Research Skills</h3>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{width: '75%'}}></div>
+              </div>
+              <span>75% Complete</span>
             </div>
-            <span>75% Complete</span>
-          </div>
-          <div className="progress-card">
-            <h3>Project Completion</h3>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{width: '60%'}}></div>
+            <div className="progress-card">
+              <h3>Project Completion</h3>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{width: '60%'}}></div>
+              </div>
+              <span>60% Complete</span>
             </div>
-            <span>60% Complete</span>
-          </div>
-          <div className="progress-card">
-            <h3>Collaboration Score</h3>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{width: '85%'}}></div>
+            <div className="progress-card">
+              <h3>Collaboration Score</h3>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{width: '85%'}}></div>
+              </div>
+              <span>85% Complete</span>
             </div>
-            <span>85% Complete</span>
           </div>
-        </div>
+        ) : (
+          <div className="progress-empty">No progress yet. Start working on projects to see your progress here.</div>
+        )}
       </div>
     </div>
   );
