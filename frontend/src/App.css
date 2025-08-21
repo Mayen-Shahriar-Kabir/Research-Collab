@@ -684,3 +684,116 @@ html {
     grid-template-columns: 1fr;
   }
 }
+
+/* =============================
+   Manage Users & Role Request
+   ============================= */
+
+/* Generic page wrapper */
+.page {
+  padding: 24px;
+}
+
+/* Titles */
+.page-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin-bottom: 16px;
+}
+
+/* Card container */
+.card {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  padding: 20px;
+}
+
+/* Admin Users Table */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.users-table thead th {
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 600;
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.users-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #eef2f7;
+  color: #475569;
+}
+
+.users-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.users-table tbody tr:hover {
+  background: #f4f7fb;
+}
+
+.users-table .actions-cell select {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.users-table .actions-cell select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Role Request */
+.role-request .request-card {
+  max-width: 640px;
+}
+
+.role-request .meta {
+  color: #475569;
+}
+
+.role-request .controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.role-request select {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.role-request select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.status {
+  margin-top: 12px;
+  color: #334155;
+}

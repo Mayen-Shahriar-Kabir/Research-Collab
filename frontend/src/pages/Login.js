@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 export default function Login({ setUser }) {
   const [email, setEmail] = useState("");
@@ -23,8 +23,13 @@ export default function Login({ setUser }) {
 
       console.log('Login response:', res.data);
       
-      // store user info in state
+      // store user info in state and persist to localStorage
       setUser(res.data.user);
+      try {
+        localStorage.setItem('user', JSON.stringify(res.data.user));
+      } catch (e) {
+        // ignore storage errors
+      }
 
       // redirect to Profile page for editing
       navigate("/profile");
@@ -74,7 +79,7 @@ export default function Login({ setUser }) {
         </form>
 
         <div className="auth-link">
-          <p>Don't have an account? <a href="/register">Create one here</a></p>
+          <p>Don't have an account? <Link to="/register">Create one here</Link></p>
         </div>
       </div>
     </div>

@@ -40,6 +40,22 @@ export default function Navbar({ user, setUser }) {
                     Profile
                   </Link>
                 </li>
+                {user.role !== 'admin' && (
+                  <li>
+                    <Link className={linkClass("/role-request")} to="/role-request">
+                      <i className="nav-icon">📝</i>
+                      Request Role
+                    </Link>
+                  </li>
+                )}
+                {user.role === 'admin' && (
+                  <li>
+                    <Link className={linkClass("/admin/users")} to="/admin/users">
+                      <i className="nav-icon">👥</i>
+                      Manage Users
+                    </Link>
+                  </li>
+                )}
               </>
             )}
           </ul>

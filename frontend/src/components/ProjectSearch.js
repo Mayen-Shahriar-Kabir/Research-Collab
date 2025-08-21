@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './ProjectSearch.css';
 
 const ProjectSearch = ({ userRole, userId }) => {
@@ -12,29 +12,7 @@ const ProjectSearch = ({ userRole, userId }) => {
     search: ''
   });
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  useEffect(() => {
-    applyFilters();
-  }, [projects, filters]);
-
-  const fetchProjects = async () => {
-    try {
-      const response = await fetch('http://localhost:5000/api/projects');
-      if (response.ok) {
-        const data = await response.json();
-        setProjects(data);
-      }
-    } catch (error) {
-      console.error('Error fetching projects:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = projects;
 
     if (filters.domain) {
@@ -61,7 +39,35 @@ const ProjectSearch = ({ userRole, userId }) => {
     }
 
     setFilteredProjects(filtered);
+  }, [projects, filters]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/projects');
+      const isJson = (response.headers.get('content-type') || '').includes('application/json');
+      if (response.ok) {
+        const data = isJson ? await response.json() : await response.text();
+        setProjects(Array.isArray(data) ? data : []);
+      } else {
+        const data = isJson ? await response.json() : await response.text();
+        console.error('Error fetching projects:', data);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -78,7 +84,7 @@ const ProjectSearch = ({ userRole, userId }) => {
 
   const applyToProject = async (projectId) => {
     try {
-      const response = await fetch('http://localhost:5000/api/applications', {
+      const response = await fetch('http://localhost:5001/api/applications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -89,9 +95,13 @@ const ProjectSearch = ({ userRole, userId }) => {
           message: 'I am interested in joining this research project.'
         }),
       });
-      
+      const isJson = (response.headers.get('content-type') || '').includes('application/json');
+      const data = isJson ? await response.json() : await response.text();
       if (response.ok) {
         alert('Application submitted successfully!');
+      } else {
+        const msg = (isJson && data?.message) || (typeof data === 'string' ? data : 'Error submitting application');
+        alert(msg);
       }
     } catch (error) {
       console.error('Error applying to project:', error);
@@ -173,7 +183,7 @@ const ProjectSearch = ({ userRole, userId }) => {
                   <strong>Domain:</strong> {project.domain}
                 </p>
                 <p className="faculty">
-                  <strong>Faculty:</strong> {project.faculty?.profile?.name || 'N/A'}
+                  <strong>Faculty:</strong> {project.faculty?.name || project.faculty?.profile?.name || 'N/A'}
                 </p>
                 <p className="availability">
                   <strong>Availability:</strong> {getAvailabilityStatus(project)}
@@ -201,7 +211,7 @@ const ProjectSearch = ({ userRole, userId }) => {
                   <div className="students-list">
                     {project.currentStudents.map(student => (
                       <span key={student._id} className="student-tag">
-                        {student.profile?.name || student.email}
+                        {student.name || student.profile?.name || student.email}
                       </span>
                     ))}
                   </div>

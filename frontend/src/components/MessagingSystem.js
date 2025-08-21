@@ -10,6 +10,9 @@ const MessagingSystem = ({ userId, userRole }) => {
   const [users, setUsers] = useState([]);
   const [showNewChat, setShowNewChat] = useState(false);
   const [selectedRecipient, setSelectedRecipient] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     fetchMessages();
@@ -18,7 +21,7 @@ const MessagingSystem = ({ userId, userRole }) => {
 
   const fetchMessages = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/messages?userId=${userId}`);
+      const response = await fetch(`http://localhost:5001/api/messages?userId=${userId}`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data);
@@ -31,11 +34,32 @@ const MessagingSystem = ({ userId, userRole }) => {
     }
   };
 
+  // search users by name/email for starting a chat
+  useEffect(() => {
+    if (!showNewChat) return;
+    const handle = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ requesterId: userId, query: searchQuery || '' });
+        const res = await fetch(`http://localhost:5001/api/messages/search?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data || []);
+        }
+      } catch (e) {
+        console.error('Search error', e);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery, showNewChat, userId]);
+
   const fetchUsers = async () => {
     try {
       // This would need a users endpoint in your backend
       // For now, we'll use the messages to get user info
-      const response = await fetch(`http://localhost:5000/api/messages?userId=${userId}`);
+      const response = await fetch(`http://localhost:5001/api/messages?userId=${userId}`);
       if (response.ok) {
         const data = await response.json();
         const uniqueUsers = new Map();
@@ -98,7 +122,7 @@ const MessagingSystem = ({ userId, userRole }) => {
     if (!newMessage.trim() || !selectedConversation) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/messages', {
+      const response = await fetch('http://localhost:5001/api/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,6 +147,9 @@ const MessagingSystem = ({ userId, userRole }) => {
         
         setNewMessage('');
         fetchMessages(); // Refresh to get updated conversations
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.message || 'Failed to send message');
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -133,7 +160,7 @@ const MessagingSystem = ({ userId, userRole }) => {
     if (!selectedRecipient || !newMessage.trim()) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/messages', {
+      const response = await fetch('http://localhost:5001/api/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,15 +179,22 @@ const MessagingSystem = ({ userId, userRole }) => {
         setSelectedRecipient('');
         setShowNewChat(false);
         fetchMessages();
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.message || 'Failed to start conversation');
       }
     } catch (error) {
       console.error('Error starting conversation:', error);
     }
   };
 
+  const chooseRecipient = (user) => {
+    setSelectedRecipient(user._id);
+  };
+
   const markAsRead = async (messageId) => {
     try {
-      await fetch(`http://localhost:5000/api/messages/${messageId}/read`, {
+      await fetch(`http://localhost:5001/api/messages/${messageId}/read`, {
         method: 'PUT'
       });
     } catch (error) {
@@ -258,18 +292,30 @@ const MessagingSystem = ({ userId, userRole }) => {
               </button>
             </div>
             <div className="new-chat-form">
-              <select
-                value={selectedRecipient}
-                onChange={(e) => setSelectedRecipient(e.target.value)}
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-control"
-              >
-                <option value="">Select recipient...</option>
-                {users.map(user => (
-                  <option key={user._id} value={user._id}>
-                    {user.profile?.name || user.email} ({user.role})
-                  </option>
+              />
+              <div className="search-results" style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #eee', borderRadius: 8, marginTop: 8 }}>
+                {searching && <div style={{ padding: 8, color: '#666' }}>Searching...</div>}
+                {!searching && searchResults.map(user => (
+                  <div
+                    key={user._id}
+                    className={`search-result-item ${selectedRecipient === user._id ? 'selected' : ''}`}
+                    style={{ padding: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
+                    onClick={() => chooseRecipient(user)}
+                  >
+                    <span>{user.name || user.profile?.name || user.email}</span>
+                    <span style={{ opacity: 0.6 }}>{user.role}</span>
+                  </div>
                 ))}
-              </select>
+                {!searching && searchQuery && searchResults.length === 0 && (
+                  <div style={{ padding: 8, color: '#999' }}>No users found</div>
+                )}
+              </div>
               <textarea
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}

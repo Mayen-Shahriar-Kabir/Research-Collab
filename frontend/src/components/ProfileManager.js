@@ -15,6 +15,7 @@ const ProfileManager = ({ userId }) => {
   const [loading, setLoading] = useState(true);
   const [newInterest, setNewInterest] = useState('');
   const [newPublication, setNewPublication] = useState({ title: '', url: '' });
+  const [pubFile, setPubFile] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
 
@@ -66,6 +67,38 @@ const ProfileManager = ({ userId }) => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePubFileChange = (e) => {
+    const file = e.target.files[0];
+    setPubFile(file || null);
+  };
+
+  const uploadPublicationFile = async () => {
+    if (!userId) return alert('Please log in');
+    if (!newPublication.title.trim()) return alert('Please provide a title');
+    if (!pubFile) return alert('Please choose a file');
+
+    const formData = new FormData();
+    formData.append('file', pubFile);
+    formData.append('title', newPublication.title.trim());
+    if (newPublication.url) formData.append('url', newPublication.url);
+
+    try {
+      const res = await fetch(`http://localhost:5001/api/auth/profile/${userId}/publications/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to upload publication');
+      // Refresh profile to show latest publications
+      await fetchProfile();
+      setPubFile(null);
+      setNewPublication({ title: '', url: '' });
+      alert('Publication uploaded');
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -353,6 +386,11 @@ const ProfileManager = ({ userId }) => {
                       View Publication
                     </a>
                   )}
+                  {pub.file && (
+                    <a href={`http://localhost:5001${pub.file}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 10 }}>
+                      Download File
+                    </a>
+                  )}
                 </div>
                 {isEditing && (
                   <button 
@@ -381,7 +419,11 @@ const ProfileManager = ({ userId }) => {
                 placeholder="Publication URL (optional)"
                 className="form-control"
               />
-              <button onClick={addPublication} className="btn btn-secondary">Add Publication</button>
+              <div className="add-publication-actions" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button onClick={addPublication} className="btn btn-secondary">Add Link Only</button>
+                <input type="file" onChange={handlePubFileChange} accept=".pdf,.doc,.docx,.ppt,.pptx,image/*" />
+                <button onClick={uploadPublicationFile} className="btn btn-primary">Upload File</button>
+              </div>
             </div>
           )}
         </div>

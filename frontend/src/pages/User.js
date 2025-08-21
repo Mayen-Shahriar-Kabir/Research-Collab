@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import { Link } from 'react-router-dom';
 
 export default function User({ user }) {
-  const [stats, setStats] = useState({
+  const [stats] = useState({
     totalProjects: 0,
     activeTasks: 0,
     completedTasks: 0,
     messages: 0
   });
 
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [recentActivity] = useState([]);
 
   const hasWork =
     stats.totalProjects > 0 ||
@@ -17,12 +18,19 @@ export default function User({ user }) {
     stats.messages > 0 ||
     recentActivity.length > 0;
 
-  const quickActions = [
-    { title: "Browse Projects", description: "Find new research opportunities", icon: "🔍", link: "/home", color: "#667eea" },
-    { title: "Manage Tasks", description: "View and update your tasks", icon: "📋", link: "/home", color: "#f093fb" },
-    { title: "Messages", description: "Check your messages", icon: "💬", link: "/home", color: "#4facfe" },
-    { title: "Edit Profile", description: "Update your information", icon: "👤", link: "/profile", color: "#43e97b" }
-  ];
+  const quickActions = (() => {
+    const base = [
+      { title: "Browse Projects", description: "Find new research opportunities", icon: "🔍", link: "/home", color: "#667eea" },
+      { title: "Manage Tasks", description: "View and update your tasks", icon: "📋", link: "/home", color: "#f093fb" },
+      { title: "Messages", description: "Check your messages", icon: "💬", link: "/home", color: "#4facfe" },
+      { title: "Edit Profile", description: "Update your information", icon: "👤", link: "/profile", color: "#43e97b" }
+    ];
+    if (user && (user.role === 'faculty' || user.role === 'admin')) {
+      base.unshift({ title: "Add Project", description: "Create a new research project", icon: "➕", link: "/projects/new", color: "#ff9a9e" });
+      base.unshift({ title: "Review Applications", description: "Accept or reject applicants", icon: "✅", link: "/applications-review", color: "#84fab0" });
+    }
+    return base;
+  })();
 
   return (
     <div className="dashboard-container">
@@ -78,13 +86,13 @@ export default function User({ user }) {
           <h2>Quick Actions</h2>
           <div className="quick-actions-grid">
             {quickActions.map((action, index) => (
-              <a key={index} href={action.link} className="action-card" style={{'--card-color': action.color}}>
+              <Link key={index} to={action.link} className="action-card" style={{'--card-color': action.color}}>
                 <div className="action-icon">{action.icon}</div>
                 <div className="action-content">
                   <h3>{action.title}</h3>
                   <p>{action.description}</p>
                 </div>
-              </a>
+              </Link>
             ))}
           </div>
         </div>

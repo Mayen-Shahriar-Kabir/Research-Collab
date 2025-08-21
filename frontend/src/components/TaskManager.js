@@ -19,7 +19,7 @@ const TaskManager = ({ userId, userRole, projectId }) => {
 
   const fetchTasks = async () => {
     try {
-      let url = 'http://localhost:5000/api/tasks?';
+      let url = 'http://localhost:5001/api/tasks?';
       if (projectId) url += `projectId=${projectId}&`;
       if (userId) url += `userId=${userId}`;
       
@@ -37,7 +37,7 @@ const TaskManager = ({ userId, userRole, projectId }) => {
 
   const updateTaskStatus = async (taskId, newStatus) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/tasks/${taskId}/status`, {
+      const response = await fetch(`http://localhost:5001/api/tasks/${taskId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -60,7 +60,7 @@ const TaskManager = ({ userId, userRole, projectId }) => {
     if (!newTask.title.trim()) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/tasks', {
+      const response = await fetch('http://localhost:5001/api/tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -261,7 +261,7 @@ const TaskManager = ({ userId, userRole, projectId }) => {
                   )}
                   {task.assignedTo && (
                     <span className="assigned-to">
-                      <strong>Assigned to:</strong> {task.assignedTo.profile?.name || task.assignedTo.email}
+                      <strong>Assigned to:</strong> {task.assignedTo.name || task.assignedTo.profile?.name || task.assignedTo.email}
                     </span>
                   )}
                 </div>
