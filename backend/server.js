@@ -5,10 +5,17 @@ import dotenv from "dotenv";
 import authRoutes from "./routes/route.js";
 import bcrypt from "bcryptjs";
 import path from "path";
+import fs from "fs";
+import optionalAuth from "./middleware/auth.js";
 import projectRoutes from "./routes/projects.js";
 import applicationRoutes from "./routes/applications.js";
 import taskRoutes from "./routes/tasks.js";
 import messageRoutes from "./routes/messages.js";
+import bookmarkRoutes from "./routes/bookmarks.js";
+import notificationRoutes from "./routes/notifications.js";
+import certificateRoutes from "./routes/certificates.js";
+import labAccessRoutes from "./routes/labAccess.js";
+import timelineExtensionRoutes from "./routes/timelineExtensions.js";
 import User from "./models/model.js";
 
 // Load environment variables
@@ -19,12 +26,31 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: "http://localhost:3000",  // your frontend URL
-  credentials: true,                // allow cookies
+  origin: [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 }));
+
 
 // Serve static files for uploaded images
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Ensure uploads directories exist
+const ensureDirs = [
+  path.join(process.cwd(), 'uploads'),
+  path.join(process.cwd(), 'uploads', 'applications')
+];
+for (const dir of ensureDirs) {
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    console.warn('Could not create uploads dir', dir, e.message);
+  }
+}
 
 
 // Connect MongoDB
@@ -38,12 +64,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// Optional auth middleware (sets req.user if Authorization: Bearer <token> present)
+app.use(optionalAuth);
+
 // Routes
-app.use("/api/auth", authRoutes);
+app.use("/api", authRoutes);  // This includes /api/profile routes
 app.use("/api/projects", projectRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/bookmarks", bookmarkRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/certificates", certificateRoutes);
+app.use("/api/lab-access", labAccessRoutes);
+app.use("/api/timeline-extensions", timelineExtensionRoutes);
 
 // Return JSON for unmatched API routes to avoid HTML responses in frontend
 app.use('/api', (req, res) => {

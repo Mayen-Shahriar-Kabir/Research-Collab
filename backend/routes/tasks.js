@@ -1,57 +1,27 @@
 import express from 'express';
-import Task from '../models/Task.js';
+import { getProjectTasks, getStudentTasks, getTasks, createTask, updateTaskStatus, updateTaskWithWork, uploadTaskWorkMiddleware, approveTask } from '../controllers/controller.js';
 
 const router = express.Router();
 
-// Get tasks filtered by optional projectId and/or userId
-router.get('/', async (req, res) => {
-  try {
-    const { projectId, userId } = req.query;
-    const filter = {};
-    if (projectId) filter.project = projectId;
-    if (userId) filter.assignedTo = userId;
+// Get tasks (with query parameters)
+router.get('/', getTasks);
 
-    const tasks = await Task.find(filter)
-      .populate({ path: 'project', select: 'title' })
-      .populate({ path: 'assignedTo', select: 'email name role' })
-      .sort({ createdAt: -1 });
+// Get tasks for a project
+router.get('/project/:projectId', getProjectTasks);
 
-    res.json(tasks);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+// Get tasks assigned to a student
+router.get('/student/:studentId', getStudentTasks);
 
-// Create task
-router.post('/', async (req, res) => {
-  try {
-    const task = await Task.create(req.body);
-    const populated = await task.populate([
-      { path: 'project', select: 'title' },
-      { path: 'assignedTo', select: 'email name role' },
-    ]);
-    res.status(201).json(populated);
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ message: err.message });
-  }
-});
+// Create task (faculty only)
+router.post('/', createTask);
 
-// Update status
-router.put('/:taskId/status', async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { status } = req.body;
-    const updated = await Task.findByIdAndUpdate(taskId, { status }, { new: true })
-      .populate({ path: 'project', select: 'title' })
-      .populate({ path: 'assignedTo', select: 'email name role' });
-    if (!updated) return res.status(404).json({ message: 'Task not found' });
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ message: err.message });
-  }
-});
+// Update task status
+router.put('/:taskId/status', updateTaskStatus);
+
+// Update task with work file upload (students only)
+router.put('/:taskId/work', uploadTaskWorkMiddleware.single('workFile'), updateTaskWithWork);
+
+// Approve/reject task (faculty only)
+router.put('/:taskId/approve', approveTask);
 
 export default router;

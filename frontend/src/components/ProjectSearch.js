@@ -5,6 +5,7 @@ const ProjectSearch = ({ userRole, userId }) => {
   const [projects, setProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [bookmarkedProjects, setBookmarkedProjects] = useState(new Set());
   const [filters, setFilters] = useState({
     domain: '',
     faculty: '',
@@ -43,7 +44,10 @@ const ProjectSearch = ({ userRole, userId }) => {
 
   useEffect(() => {
     fetchProjects();
-  }, []);
+    if (userRole === 'student' && userId) {
+      fetchBookmarks();
+    }
+  }, [userRole, userId]);
 
   useEffect(() => {
     applyFilters();
@@ -64,6 +68,24 @@ const ProjectSearch = ({ userRole, userId }) => {
       console.error('Error fetching projects:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchBookmarks = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5001/api/bookmarks/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const bookmarkIds = new Set(data.bookmarks.map(bookmark => bookmark._id));
+        setBookmarkedProjects(bookmarkIds);
+      }
+    } catch (error) {
+      console.error('Error fetching bookmarks:', error);
     }
   };
 
@@ -106,6 +128,50 @@ const ProjectSearch = ({ userRole, userId }) => {
     } catch (error) {
       console.error('Error applying to project:', error);
       alert('Error submitting application');
+    }
+  };
+
+  const toggleBookmark = async (projectId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const isBookmarked = bookmarkedProjects.has(projectId);
+      
+      if (isBookmarked) {
+        // Remove bookmark
+        const response = await fetch('http://localhost:5001/api/bookmarks', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId, projectId })
+        });
+        
+        if (response.ok) {
+          setBookmarkedProjects(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(projectId);
+            return newSet;
+          });
+        }
+      } else {
+        // Add bookmark
+        const response = await fetch('http://localhost:5001/api/bookmarks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId, projectId })
+        });
+        
+        if (response.ok) {
+          setBookmarkedProjects(prev => new Set([...prev, projectId]));
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling bookmark:', error);
+      alert('Error updating bookmark');
     }
   };
 
@@ -220,15 +286,24 @@ const ProjectSearch = ({ userRole, userId }) => {
                 )}
               </div>
 
-              {userRole === 'student' && project.status === 'available' && (
+              {userRole === 'student' && (
                 <div className="project-actions">
                   <button 
-                    onClick={() => applyToProject(project._id)}
-                    className="btn btn-primary"
-                    disabled={project.currentStudents.length >= project.maxStudents}
+                    onClick={() => toggleBookmark(project._id)}
+                    className={`btn ${bookmarkedProjects.has(project._id) ? 'btn-bookmarked' : 'btn-bookmark'}`}
+                    title={bookmarkedProjects.has(project._id) ? 'Remove from bookmarks' : 'Add to bookmarks'}
                   >
-                    {project.currentStudents.length >= project.maxStudents ? 'Full' : 'Apply'}
+                    {bookmarkedProjects.has(project._id) ? '★ Bookmarked' : '☆ Bookmark'}
                   </button>
+                  {project.status === 'available' && (
+                    <button 
+                      onClick={() => applyToProject(project._id)}
+                      className="btn btn-primary"
+                      disabled={project.currentStudents.length >= project.maxStudents}
+                    >
+                      {project.currentStudents.length >= project.maxStudents ? 'Full' : 'Apply'}
+                    </button>
+                  )}
                 </div>
               )}
 

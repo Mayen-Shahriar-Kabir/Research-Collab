@@ -3,6 +3,7 @@ import Message from '../models/Message.js';
 import User from '../models/model.js';
 import Application from '../models/Application.js';
 import Project from '../models/Project.js';
+import Notification from '../models/Notification.js';
 
 const router = express.Router();
 
@@ -108,6 +109,14 @@ router.post('/', async (req, res) => {
       { path: 'sender', select: 'email role profile name' },
       { path: 'recipient', select: 'email role profile name' },
     ]);
+    // Notify recipient
+    await Notification.create({
+      user: recipient,
+      type: 'message',
+      title: `New message from ${populated.sender?.name || 'a user'}`,
+      body: content.slice(0, 120),
+      link: `/messages`
+    });
     res.status(201).json(populated);
   } catch (err) {
     console.error(err);

@@ -8,7 +8,8 @@ const ProfileManager = ({ userId }) => {
       academicInterests: [],
       institution: '',
       publications: [],
-      profilePhoto: null
+      profilePhoto: null,
+      cgpa: ''
     }
   });
   const [isEditing, setIsEditing] = useState(false);
@@ -31,7 +32,7 @@ const ProfileManager = ({ userId }) => {
   const fetchProfile = async () => {
     try {
       console.log('Fetching profile for userId:', userId);
-      const response = await fetch(`http://localhost:5001/api/auth/profile/${userId}`);
+      const response = await fetch(`http://localhost:5001/api/profile/${userId}`);
       console.log('Fetch response status:', response.status);
       
       if (response.ok) {
@@ -48,7 +49,8 @@ const ProfileManager = ({ userId }) => {
             institution: '',
             academicInterests: [],
             publications: [],
-            profilePhoto: null
+            profilePhoto: null,
+            cgpa: ''
           }
         });
       }
@@ -62,7 +64,8 @@ const ProfileManager = ({ userId }) => {
           institution: '',
           academicInterests: [],
           publications: [],
-          profilePhoto: null
+          profilePhoto: null,
+          cgpa: ''
         }
       });
     } finally {
@@ -86,7 +89,7 @@ const ProfileManager = ({ userId }) => {
     if (newPublication.url) formData.append('url', newPublication.url);
 
     try {
-      const res = await fetch(`http://localhost:5001/api/auth/profile/${userId}/publications/upload`, {
+      const res = await fetch(`http://localhost:5001/api/profile/${userId}/publications/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -115,7 +118,7 @@ const ProfileManager = ({ userId }) => {
     }
     
     try {
-      const url = `http://localhost:5001/api/auth/profile/${userId}`;
+      const url = `http://localhost:5001/api/profile/${userId}`;
       console.log('Making request to:', url);
       
       const response = await fetch(url, {
@@ -159,7 +162,7 @@ const ProfileManager = ({ userId }) => {
         ...prev,
         profile: {
           ...prev.profile,
-          academicInterests: [...prev.profile.academicInterests, newInterest.trim()]
+          academicInterests: [...(prev.profile?.academicInterests || []), newInterest.trim()]
         }
       }));
       setNewInterest('');
@@ -171,7 +174,7 @@ const ProfileManager = ({ userId }) => {
       ...prev,
       profile: {
         ...prev.profile,
-        academicInterests: prev.profile.academicInterests.filter((_, i) => i !== index)
+        academicInterests: (prev.profile?.academicInterests || []).filter((_, i) => i !== index)
       }
     }));
   };
@@ -182,7 +185,7 @@ const ProfileManager = ({ userId }) => {
         ...prev,
         profile: {
           ...prev.profile,
-          publications: [...prev.profile.publications, newPublication]
+          publications: [...(prev.profile?.publications || []), newPublication]
         }
       }));
       setNewPublication({ title: '', url: '' });
@@ -194,7 +197,7 @@ const ProfileManager = ({ userId }) => {
       ...prev,
       profile: {
         ...prev.profile,
-        publications: prev.profile.publications.filter((_, i) => i !== index)
+        publications: (prev.profile?.publications || []).filter((_, i) => i !== index)
       }
     }));
   };
@@ -218,7 +221,7 @@ const ProfileManager = ({ userId }) => {
     formData.append('profilePhoto', photoFile);
     
     try {
-      const response = await fetch(`http://localhost:5001/api/auth/profile/${userId}/photo`, {
+      const response = await fetch(`http://localhost:5001/api/profile/${userId}/photo`, {
         method: 'POST',
         body: formData,
       });
@@ -277,7 +280,7 @@ const ProfileManager = ({ userId }) => {
             <div className="photo-display">
               {photoPreview ? (
                 <img src={photoPreview} alt="Preview" className="profile-photo-preview" />
-              ) : profile.profile.profilePhoto ? (
+              ) : profile.profile?.profilePhoto ? (
                 <img src={`http://localhost:5001${profile.profile.profilePhoto}`} alt="Profile" className="profile-photo" />
               ) : (
                 <div className="photo-placeholder">
@@ -313,7 +316,7 @@ const ProfileManager = ({ userId }) => {
           {isEditing ? (
             <input
               type="text"
-              value={profile.profile.name || ''}
+              value={profile.profile?.name || ''}
               onChange={(e) => setProfile(prev => ({
                 ...prev,
                 profile: { ...prev.profile, name: e.target.value }
@@ -321,7 +324,7 @@ const ProfileManager = ({ userId }) => {
               className="form-control"
             />
           ) : (
-            <p className="profile-value">{profile.profile.name || 'Not specified'}</p>
+            <p className="profile-value">{profile.profile?.name || 'Not specified'}</p>
           )}
         </div>
 
@@ -330,7 +333,7 @@ const ProfileManager = ({ userId }) => {
           {isEditing ? (
             <input
               type="text"
-              value={profile.profile.institution || ''}
+              value={profile.profile?.institution || ''}
               onChange={(e) => setProfile(prev => ({
                 ...prev,
                 profile: { ...prev.profile, institution: e.target.value }
@@ -338,14 +341,35 @@ const ProfileManager = ({ userId }) => {
               className="form-control"
             />
           ) : (
-            <p className="profile-value">{profile.profile.institution || 'Not specified'}</p>
+            <p className="profile-value">{profile.profile?.institution || 'Not specified'}</p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>CGPA</label>
+          {isEditing ? (
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="4.0"
+              value={profile.profile?.cgpa || ''}
+              onChange={(e) => setProfile(prev => ({
+                ...prev,
+                profile: { ...prev.profile, cgpa: e.target.value }
+              }))}
+              className="form-control"
+              placeholder="Enter CGPA (0.00 - 4.00)"
+            />
+          ) : (
+            <p className="profile-value">{profile.profile?.cgpa || 'Not specified'}</p>
           )}
         </div>
 
         <div className="form-group">
           <label>Academic Interests</label>
           <div className="interests-container">
-            {profile.profile.academicInterests?.map((interest, index) => (
+            {profile.profile?.academicInterests?.map((interest, index) => (
               <div key={index} className="interest-tag">
                 <span>{interest}</span>
                 {isEditing && (
@@ -377,7 +401,7 @@ const ProfileManager = ({ userId }) => {
         <div className="form-group">
           <label>Publications</label>
           <div className="publications-container">
-            {profile.profile.publications?.map((pub, index) => (
+            {profile.profile?.publications?.map((pub, index) => (
               <div key={index} className="publication-item">
                 <div className="publication-content">
                   <h4>{pub.title}</h4>

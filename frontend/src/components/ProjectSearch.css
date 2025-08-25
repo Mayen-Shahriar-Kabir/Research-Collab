@@ -217,9 +217,44 @@
 }
 
 .project-actions {
-  margin-bottom: 15px;
-  padding-top: 15px;
-  border-top: 1px solid #eee;
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.btn-bookmark {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #495057;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.btn-bookmark:hover {
+  background-color: #e9ecef;
+  border-color: #adb5bd;
+  color: #212529;
+}
+
+.btn-bookmarked {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.btn-bookmarked:hover {
+  background-color: #ffeaa7;
+  border-color: #ffdd57;
+  color: #7c5e00;
 }
 
 .project-dates {

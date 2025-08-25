@@ -7,6 +7,10 @@ export default function Login({ setUser }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  // Normalize API base to avoid double /api or trailing slashes
+  const API_BASE = ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
+    .replace(/\/$/, '')
+    .replace(/\/api$/, ''));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,7 +20,7 @@ export default function Login({ setUser }) {
 
     try {
       const res = await axios.post(
-        "http://localhost:5001/api/auth/login", // match your backend port
+        `${API_BASE}/api/login`, // use configurable API base
         { email, password },
         { withCredentials: true }
       );
@@ -27,6 +31,10 @@ export default function Login({ setUser }) {
       setUser(res.data.user);
       try {
         localStorage.setItem('user', JSON.stringify(res.data.user));
+        // Store JWT token if provided
+        if (res.data.token) {
+          localStorage.setItem('token', res.data.token);
+        }
       } catch (e) {
         // ignore storage errors
       }

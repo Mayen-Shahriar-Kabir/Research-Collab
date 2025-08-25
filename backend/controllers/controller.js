@@ -1,7 +1,16 @@
 import User from "../models/model.js";
+import Project from "../models/Project.js";
+import Task from "../models/Task.js";
+import Application from "../models/Application.js";
+import Notification from "../models/Notification.js";
+import Certificate from "../models/Certificate.js";
+import LabAccessRequest from "../models/LabAccessRequest.js";
+import TimelineExtensionRequest from "../models/TimelineExtensionRequest.js";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 
 // Register user (already exists)
 export const registerUser = async (req, res) => {
@@ -41,7 +50,14 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    // Send back user info
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET || 'your_jwt_secret',
+      { expiresIn: '1d' }
+    );
+
+    // Send back user info with token
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -51,6 +67,7 @@ export const loginUser = async (req, res) => {
         role: user.role,
         roleRequest: user.roleRequest || null,
       },
+      token: token
     });
   } catch (err) {
     console.error(err);
@@ -121,9 +138,15 @@ export const getProfile = async (req, res) => {
     const { userId } = req.params;
     console.log('Getting profile for userId:', userId);
     
+    // Check if userId is provided
+    if (!userId) {
+      console.log('No userId provided');
+      return res.status(400).json({ message: "User ID is required" });
+    }
+    
     // Check if userId is valid MongoDB ObjectId format
-    if (!userId || userId.length !== 24) {
-      console.log('Invalid userId format:', userId);
+    if (userId.length !== 24) {
+      console.log('Invalid userId format:', userId, 'Length:', userId.length);
       return res.status(400).json({ message: "Invalid user ID format" });
     }
     
@@ -138,10 +161,12 @@ export const getProfile = async (req, res) => {
       profile: {
         name: user.name,
         email: user.email,
+        role: user.role,
         institution: user.institution || '',
         academicInterests: user.academicInterests || [],
         publications: user.publications || [],
-        profilePhoto: user.profilePhoto || null
+        profilePhoto: user.profilePhoto || null,
+        cgpa: user.cgpa || null
       }
     };
     
@@ -157,7 +182,7 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, institution, academicInterests, publications } = req.body;
+    const { name, institution, academicInterests, publications, cgpa } = req.body;
     
     console.log('Updating profile for userId:', userId);
     console.log('Request body:', req.body);
@@ -168,7 +193,8 @@ export const updateProfile = async (req, res) => {
         name,
         institution,
         academicInterests,
-        publications
+        publications,
+        cgpa: cgpa ? parseFloat(cgpa) : null
       },
       { new: true }
     );
@@ -187,7 +213,8 @@ export const updateProfile = async (req, res) => {
         institution: updatedUser.institution || '',
         academicInterests: updatedUser.academicInterests || [],
         publications: updatedUser.publications || [],
-        profilePhoto: updatedUser.profilePhoto || null
+        profilePhoto: updatedUser.profilePhoto || null,
+        cgpa: updatedUser.cgpa || null
       }
     });
   } catch (err) {
@@ -389,6 +416,1196 @@ export const setUserRole = async (req, res) => {
     await user.save();
 
     res.status(200).json({ message: 'Role set', user: { id: user._id, role: user.role } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// BOOKMARK FUNCTIONALITY
+// =========================
+
+// Add project to bookmarks
+export const bookmarkProject = async (req, res) => {
+  try {
+    const { userId, projectId } = req.body;
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role !== 'student') return res.status(403).json({ message: 'Only students can bookmark projects' });
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (user.bookmarks.includes(projectId)) {
+      return res.status(400).json({ message: 'Project already bookmarked' });
+    }
+
+    user.bookmarks.push(projectId);
+    await user.save();
+
+    res.status(200).json({ message: 'Project bookmarked successfully', bookmarks: user.bookmarks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Remove project from bookmarks
+export const removeBookmark = async (req, res) => {
+  try {
+    const { userId, projectId } = req.body;
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.bookmarks = user.bookmarks.filter(bookmark => bookmark.toString() !== projectId);
+    await user.save();
+
+    res.status(200).json({ message: 'Bookmark removed successfully', bookmarks: user.bookmarks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get user's bookmarked projects
+export const getBookmarkedProjects = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId).populate({
+      path: 'bookmarks',
+      populate: { path: 'faculty', select: 'name email' }
+    });
+    
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    res.status(200).json({ bookmarks: user.bookmarks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// TASK APPROVAL SYSTEM
+// =========================
+
+// Approve/Reject task completion by faculty
+export const approveTask = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { approved, feedback, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can approve tasks' });
+    }
+
+    const task = await Task.findById(taskId).populate('project');
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    if (task.project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can approve this task' });
+    }
+
+    // Find the latest completed update
+    const latestUpdate = task.updates[task.updates.length - 1];
+    if (!latestUpdate || latestUpdate.status !== 'completed') {
+      return res.status(400).json({ message: 'Task must be completed before approval' });
+    }
+
+    // Update the latest task update with approval
+    latestUpdate.approved = approved;
+    latestUpdate.approvedBy = facultyId;
+    latestUpdate.approvedAt = new Date();
+    latestUpdate.feedback = feedback || '';
+    
+    // If disapproved, reset task status to in_progress for revision
+    if (!approved) {
+      task.status = 'in_progress';
+      task.updates.push({
+        status: 'in_progress',
+        comments: `Task needs revision. Faculty feedback: ${feedback || 'No specific feedback provided'}`,
+        updatedBy: facultyId
+      });
+    }
+
+    // If approved, update project progress
+    if (approved) {
+      await updateProjectProgress(task.project._id);
+    }
+
+    await task.save();
+
+    // Create notification for student
+    await createNotification({
+      user: task.assignedTo,
+      type: 'task',
+      title: `Task ${approved ? 'Approved' : 'Needs Revision'}`,
+      body: `Your task "${task.title}" has been ${approved ? 'approved' : 'rejected'}. ${feedback ? `Feedback: ${feedback}` : ''}`,
+      link: `/tasks/${task._id}`
+    });
+
+    res.status(200).json({ 
+      message: `Task ${approved ? 'approved' : 'rejected'} successfully`, 
+      task,
+      feedback: feedback || ''
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Calculate and update project progress
+const updateProjectProgress = async (projectId) => {
+  try {
+    const project = await Project.findById(projectId);
+    if (!project) return;
+
+    const tasks = await Task.find({ project: projectId });
+    
+    // Calculate progress based on approved completed tasks
+    let approvedTasks = 0;
+    
+    tasks.forEach(task => {
+      const latestUpdate = task.updates[task.updates.length - 1];
+      if (latestUpdate && latestUpdate.status === 'completed' && latestUpdate.approved) {
+        approvedTasks++;
+      }
+    });
+
+    // Use requiredTasksCount if set, otherwise use total tasks
+    const requiredTasks = project.requiredTasksCount > 0 ? project.requiredTasksCount : tasks.length;
+
+    // Calculate stage-based progress
+    let stageProgress = 0;
+    if (project.stages && project.stages.length > 0) {
+      const totalWeight = project.stages.reduce((sum, stage) => sum + stage.weight, 0);
+      const completedWeight = project.stages
+        .filter(stage => stage.completed)
+        .reduce((sum, stage) => sum + stage.weight, 0);
+      
+      stageProgress = totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
+    }
+
+    // Combine task and stage progress (70% tasks, 30% stages)
+    const taskProgress = requiredTasks > 0 ? (approvedTasks / requiredTasks) * 100 : 0;
+    const combinedProgress = Math.round((taskProgress * 0.7) + (stageProgress * 0.3));
+
+    project.progressPercentage = Math.min(combinedProgress, 100);
+    await project.save();
+
+    return project.progressPercentage;
+  } catch (err) {
+    console.error('Error updating project progress:', err);
+  }
+};
+
+// =========================
+// TASK MANAGEMENT
+// =========================
+
+// Create task (faculty only)
+export const createTask = async (req, res) => {
+  try {
+    const { title, description, priority, dueDate, projectId, assignedTo, createdBy } = req.body;
+
+    const faculty = await User.findById(createdBy);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can create tasks' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== createdBy) {
+      return res.status(403).json({ message: 'Only project faculty can create tasks' });
+    }
+
+    const student = await User.findById(assignedTo);
+    if (!student || student.role !== 'student') {
+      return res.status(400).json({ message: 'Task must be assigned to a student' });
+    }
+
+    if (!project.currentStudents.includes(assignedTo)) {
+      return res.status(400).json({ message: 'Student must be part of the project' });
+    }
+
+    const task = new Task({
+      title,
+      description,
+      priority: priority || 'medium',
+      dueDate: dueDate ? new Date(dueDate) : null,
+      project: projectId,
+      assignedTo,
+      createdBy
+    });
+
+    await task.save();
+
+    // Create notification for student
+    await createNotification({
+      user: assignedTo,
+      type: 'task',
+      title: 'New Task Assigned',
+      body: `You have been assigned a new task: ${title}`,
+      link: `/tasks/${task._id}`,
+      dueDate: dueDate ? new Date(dueDate) : null
+    });
+
+    res.status(201).json({ message: 'Task created successfully', task });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update task status (students can update their own tasks)
+export const updateTaskStatus = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { status, comments, userId } = req.body;
+
+    // Validate status
+    const validStatuses = ['pending', 'in_progress', 'completed'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Must be pending, in_progress, or completed' });
+    }
+
+    const task = await Task.findById(taskId);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Students can only update their own tasks, faculty can update any task in their projects
+    if (user.role === 'student' && task.assignedTo.toString() !== userId) {
+      return res.status(403).json({ message: 'You can only update your own tasks' });
+    }
+
+    if (user.role === 'faculty') {
+      const project = await Project.findById(task.project);
+      if (project.faculty.toString() !== userId) {
+        return res.status(403).json({ message: 'You can only update tasks in your projects' });
+      }
+    }
+
+    const oldStatus = task.status;
+    task.status = status;
+    task.updates.push({
+      status,
+      comments: comments || `Status changed from ${oldStatus} to ${status}`,
+      updatedBy: userId
+    });
+
+    await task.save();
+
+    // Create notification for faculty when student updates task
+    if (user.role === 'student') {
+      const project = await Project.findById(task.project);
+      await createNotification({
+        user: project.faculty,
+        type: 'task',
+        title: 'Task Updated',
+        body: `${user.name} updated task: ${task.title} to ${status}`,
+        link: `/tasks/${task._id}`
+      });
+    }
+
+    // Update milestone progress if task is completed
+    if (status === 'completed') {
+      await updateMilestoneProgress(task.project);
+    }
+
+    res.status(200).json({ message: 'Task updated successfully', task });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get tasks for a project
+export const getProjectTasks = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    
+    const tasks = await Task.find({ project: projectId })
+      .populate('assignedTo', 'name email')
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ tasks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get tasks assigned to a student
+export const getStudentTasks = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    const tasks = await Task.find({ assignedTo: studentId })
+      .populate('project', 'title')
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ tasks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// NOTIFICATION SYSTEM
+// =========================
+
+// Helper function to create notifications
+const createNotification = async (notificationData) => {
+  try {
+    const notification = new Notification(notificationData);
+    await notification.save();
+    return notification;
+  } catch (err) {
+    console.error('Error creating notification:', err);
+  }
+};
+
+// Get notifications for a user
+export const getUserNotifications = async (req, res) => {
+  try {
+    // Handle both query parameter (?userId=...) and path parameter (/:userId)
+    const userId = req.params.userId || req.query.userId;
+    const { page = 1, limit = 20 } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+    
+    const notifications = await Notification.find({ user: userId })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+    
+    res.status(200).json(notifications);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Mark notification as read
+export const markNotificationRead = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    
+    await Notification.findByIdAndUpdate(notificationId, { read: true });
+    
+    res.status(200).json({ message: 'Notification marked as read' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Mark all notifications as read
+export const markAllNotificationsRead = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    await Notification.updateMany({ user: userId }, { read: true });
+    
+    res.status(200).json({ message: 'All notifications marked as read' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// MILESTONE TRACKER
+// =========================
+
+// Helper function to update milestone progress based on task completion
+const updateMilestoneProgress = async (projectId) => {
+  try {
+    const project = await Project.findById(projectId);
+    if (!project) return;
+
+    const tasks = await Task.find({ project: projectId });
+    const completedTasks = tasks.filter(task => task.status === 'completed');
+    
+    // Simple milestone logic: update milestones based on task completion percentage
+    const completionPercentage = tasks.length > 0 ? (completedTasks.length / tasks.length) * 100 : 0;
+    
+    project.milestones.forEach((milestone, index) => {
+      const milestoneThreshold = ((index + 1) / project.milestones.length) * 100;
+      if (completionPercentage >= milestoneThreshold && !milestone.completed) {
+        milestone.completed = true;
+        milestone.completedAt = new Date();
+      }
+    });
+
+    await project.save();
+  } catch (err) {
+    console.error('Error updating milestone progress:', err);
+  }
+};
+
+// Set/Update required tasks count for a project (faculty only)
+export const setRequiredTasksCount = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { requiredTasksCount, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can set required tasks count' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can set required tasks count' });
+    }
+
+    if (requiredTasksCount < 0) {
+      return res.status(400).json({ message: 'Required tasks count cannot be negative' });
+    }
+
+    project.requiredTasksCount = requiredTasksCount;
+    await project.save();
+
+    // Recalculate project progress with new requirements
+    await updateProjectProgress(projectId);
+
+    res.status(200).json({ 
+      message: 'Required tasks count updated successfully', 
+      project: {
+        id: project._id,
+        title: project.title,
+        requiredTasksCount: project.requiredTasksCount,
+        progressPercentage: project.progressPercentage
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get project milestones
+export const getProjectMilestones = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    
+    const project = await Project.findById(projectId).select('milestones title');
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    res.status(200).json({ milestones: project.milestones, projectTitle: project.title });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// PROJECT DOCUMENTS
+// =========================
+
+// Configure multer for project documents
+const docStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/project-documents/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'doc-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+export const uploadDocumentMiddleware = multer({
+  storage: docStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /pdf|doc|docx|ppt|pptx|xls|xlsx|txt|zip|rar/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    if (extname) return cb(null, true);
+    cb(new Error('File type not allowed'));
+  }
+});
+
+// Upload project document
+export const uploadProjectDocument = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { title, description, userId } = req.body;
+    
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Only faculty of the project can upload documents
+    if (project.faculty.toString() !== userId) {
+      return res.status(403).json({ message: 'Only project faculty can upload documents' });
+    }
+
+    const filePath = `/uploads/project-documents/${req.file.filename}`;
+    
+    project.documents.push({
+      title,
+      description: description || '',
+      fileUrl: filePath,
+      uploadedBy: userId
+    });
+
+    await project.save();
+
+    // Notify all students in the project
+    for (const studentId of project.currentStudents) {
+      await createNotification({
+        user: studentId,
+        type: 'system',
+        title: 'New Document Available',
+        body: `A new document "${title}" has been uploaded to ${project.title}`,
+        link: `/projects/${projectId}/documents`
+      });
+    }
+
+    res.status(201).json({ message: 'Document uploaded successfully', documents: project.documents });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get project documents
+export const getProjectDocuments = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    
+    const project = await Project.findById(projectId)
+      .select('documents title')
+      .populate('documents.uploadedBy', 'name email');
+    
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    res.status(200).json({ documents: project.documents, projectTitle: project.title });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// CERTIFICATE SYSTEM
+// =========================
+
+// Issue project completion certificate
+export const issueCertificate = async (req, res) => {
+  try {
+    const { projectId, studentId, facultyId, title, note } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can issue certificates' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can issue certificates' });
+    }
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(400).json({ message: 'Certificate must be issued to a student' });
+    }
+
+    if (!project.currentStudents.includes(studentId)) {
+      return res.status(400).json({ message: 'Student must be part of the project' });
+    }
+
+    // Check if certificate already exists
+    const existingCert = await Certificate.findOne({ project: projectId, student: studentId });
+    if (existingCert) {
+      return res.status(400).json({ message: 'Certificate already issued for this student' });
+    }
+
+    const certificate = new Certificate({
+      project: projectId,
+      faculty: facultyId,
+      student: studentId,
+      title: title || 'Project Completion Certificate',
+      note: note || ''
+    });
+
+    await certificate.save();
+
+    // Notify student
+    await createNotification({
+      user: studentId,
+      type: 'system',
+      title: 'Certificate Issued',
+      body: `You have received a completion certificate for ${project.title}`,
+      link: `/certificates/${certificate._id}`
+    });
+
+    res.status(201).json({ message: 'Certificate issued successfully', certificate });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get certificates for a student
+export const getStudentCertificates = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    const certificates = await Certificate.find({ student: studentId })
+      .populate('project', 'title')
+      .populate('faculty', 'name email')
+      .sort({ issuedAt: -1 });
+
+    res.status(200).json({ certificates });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// PROJECT CLOSURE
+// =========================
+
+// Close project for applications
+export const closeProjectApplications = async (req, res) => {
+  try {
+    const { projectId, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can close applications' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can close applications' });
+    }
+
+    project.closedForApplications = true;
+    project.applicationsOpen = false;
+    project.closedAt = new Date();
+    await project.save();
+
+    res.status(200).json({ message: 'Project applications closed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Reopen project for applications
+export const reopenProjectApplications = async (req, res) => {
+  try {
+    const { projectId, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can reopen applications' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can reopen applications' });
+    }
+
+    project.closedForApplications = false;
+    project.applicationsOpen = true;
+    project.closedAt = null;
+    await project.save();
+
+    res.status(200).json({ message: 'Project applications reopened successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// LAB ACCESS & TIMELINE EXTENSION
+// =========================
+
+// Request lab access
+export const requestLabAccess = async (req, res) => {
+  try {
+    const { projectId, studentId, note } = req.body;
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can request lab access' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (!project.currentStudents.includes(studentId)) {
+      return res.status(400).json({ message: 'Student must be accepted in the project' });
+    }
+
+    // Check if request already exists
+    const existingRequest = await LabAccessRequest.findOne({ project: projectId, student: studentId });
+    if (existingRequest) {
+      return res.status(400).json({ message: 'Lab access request already exists' });
+    }
+
+    const labRequest = new LabAccessRequest({
+      project: projectId,
+      student: studentId,
+      note: note || ''
+    });
+
+    await labRequest.save();
+
+    // Notify faculty
+    await createNotification({
+      user: project.faculty,
+      type: 'system',
+      title: 'Lab Access Request',
+      body: `${student.name} requested lab access for ${project.title}`,
+      link: `/lab-requests/${labRequest._id}`
+    });
+
+    res.status(201).json({ message: 'Lab access requested successfully', request: labRequest });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Approve/Reject lab access
+export const updateLabAccessStatus = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { status, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can update lab access status' });
+    }
+
+    const labRequest = await LabAccessRequest.findById(requestId).populate('project student');
+    if (!labRequest) return res.status(404).json({ message: 'Lab access request not found' });
+
+    if (labRequest.project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can update this request' });
+    }
+
+    labRequest.status = status;
+    await labRequest.save();
+
+    // Notify student
+    await createNotification({
+      user: labRequest.student._id,
+      type: 'system',
+      title: `Lab Access ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+      body: `Your lab access request for ${labRequest.project.title} has been ${status}`,
+      link: `/lab-requests/${labRequest._id}`
+    });
+
+    res.status(200).json({ message: `Lab access ${status} successfully`, request: labRequest });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Request timeline extension
+export const requestTimelineExtension = async (req, res) => {
+  try {
+    const { projectId, studentId, requestedNewDeadline, reason } = req.body;
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can request timeline extension' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (!project.currentStudents.includes(studentId)) {
+      return res.status(400).json({ message: 'Student must be part of the project' });
+    }
+
+    // Check if student has approved lab access
+    const labAccess = await LabAccessRequest.findOne({ 
+      project: projectId, 
+      student: studentId, 
+      status: 'approved' 
+    });
+    if (!labAccess) {
+      return res.status(400).json({ message: 'Lab access must be approved before requesting timeline extension' });
+    }
+
+    const extensionRequest = new TimelineExtensionRequest({
+      project: projectId,
+      student: studentId,
+      currentDeadline: project.deadline,
+      requestedNewDeadline: new Date(requestedNewDeadline),
+      reason: reason || ''
+    });
+
+    await extensionRequest.save();
+
+    // Notify faculty
+    await createNotification({
+      user: project.faculty,
+      type: 'system',
+      title: 'Timeline Extension Request',
+      body: `${student.name} requested timeline extension for ${project.title}`,
+      link: `/timeline-requests/${extensionRequest._id}`
+    });
+
+    res.status(201).json({ message: 'Timeline extension requested successfully', request: extensionRequest });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Approve/Reject timeline extension
+export const updateTimelineExtensionStatus = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { status, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can update timeline extension status' });
+    }
+
+    const extensionRequest = await TimelineExtensionRequest.findById(requestId)
+      .populate('project student');
+    if (!extensionRequest) return res.status(404).json({ message: 'Timeline extension request not found' });
+
+    if (extensionRequest.project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can update this request' });
+    }
+
+    extensionRequest.status = status;
+    await extensionRequest.save();
+
+    // If approved, update project deadline
+    if (status === 'approved') {
+      await Project.findByIdAndUpdate(extensionRequest.project._id, {
+        deadline: extensionRequest.requestedNewDeadline
+      });
+    }
+
+    // Notify student about the decision
+    await createNotification({
+      user: extensionRequest.student._id,
+      type: 'system',
+      title: `Timeline Extension ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+      body: `Your timeline extension request for "${extensionRequest.project.title}" has been ${status}`,
+      link: `/projects/${extensionRequest.project._id}`
+    });
+
+    res.status(200).json({ 
+      message: `Timeline extension ${status} successfully`, 
+      request: extensionRequest 
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// TASK MANAGEMENT
+// =========================
+
+// Get tasks with query parameters (general endpoint)
+export const getTasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.query;
+    let query = {};
+
+    if (projectId) {
+      query.project = projectId;
+    } else if (userId) {
+      query.assignedTo = userId;
+    }
+
+    const tasks = await Task.find(query)
+      .populate('assignedTo', 'name email')
+      .populate('project', 'title')
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(tasks);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// PROJECT MANAGEMENT
+// =========================
+
+// Update project details (faculty only)
+export const updateProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { facultyId, title, description, domain, requirements, maxStudents, deadline, requiredTasksCount } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can update projects' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can update this project' });
+    }
+
+    // Update project fields
+    if (title) project.title = title;
+    if (description) project.description = description;
+    if (domain) project.domain = domain;
+    if (requirements) project.requirements = requirements;
+    if (maxStudents) project.maxStudents = maxStudents;
+    if (deadline) project.deadline = new Date(deadline);
+    if (requiredTasksCount !== undefined) project.requiredTasksCount = requiredTasksCount;
+
+    await project.save();
+
+    // Recalculate progress if required tasks count was updated
+    if (requiredTasksCount !== undefined) {
+      await updateProjectProgress(projectId);
+    }
+
+    res.status(200).json({ message: 'Project updated successfully', project });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Accept/Reject application and manage students
+export const updateApplicationStatus = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const { status, facultyId } = req.body;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can update application status' });
+    }
+
+    const application = await Application.findById(applicationId)
+      .populate('project student');
+    if (!application) return res.status(404).json({ message: 'Application not found' });
+
+    if (application.project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can update this application' });
+    }
+
+    const oldStatus = application.status;
+    application.status = status;
+    await application.save();
+
+    // If accepted, add student to project
+    if (status === 'accepted' && oldStatus !== 'accepted') {
+      const project = await Project.findById(application.project._id);
+      if (!project.currentStudents.includes(application.student._id)) {
+        project.currentStudents.push(application.student._id);
+        await project.save();
+      }
+    }
+
+    // If rejected or status changed from accepted, remove student from project
+    if (status === 'rejected' && oldStatus === 'accepted') {
+      const project = await Project.findById(application.project._id);
+      project.currentStudents = project.currentStudents.filter(
+        studentId => studentId.toString() !== application.student._id.toString()
+      );
+      await project.save();
+    }
+
+    // Create notification for student
+    await createNotification({
+      user: application.student._id,
+      type: 'application',
+      title: `Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+      body: `Your application for "${application.project.title}" has been ${status}`,
+      link: `/applications/${application._id}`
+    });
+
+    res.status(200).json({ message: `Application ${status} successfully`, application });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get project applications for faculty
+export const getProjectApplications = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { facultyId } = req.query;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can view project applications' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can view applications' });
+    }
+
+    const applications = await Application.find({ project: projectId })
+      .populate('student', 'name email academicInterests publications')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ applications });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Configure multer for task work uploads
+const taskWorkStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/task-work/';
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (e) {
+      console.error('Failed to ensure task-work upload directory exists:', e);
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'work-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+export const uploadTaskWorkMiddleware = multer({
+  storage: taskWorkStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /pdf|doc|docx|ppt|pptx|xls|xlsx|txt|zip|rar|jpg|jpeg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    if (extname) return cb(null, true);
+    cb(new Error('File type not allowed'));
+  }
+});
+
+// Update task with work upload (students only)
+export const updateTaskWithWork = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { status, comments, userId } = req.body;
+
+    const task = await Task.findById(taskId).populate('project');
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Only assigned student can update their task
+    if (user.role !== 'student' || task.assignedTo.toString() !== userId) {
+      return res.status(403).json({ message: 'You can only update your own tasks' });
+    }
+
+    let workFileUrl = null;
+    if (req.file) {
+      workFileUrl = `/uploads/task-work/${req.file.filename}`;
+    }
+
+    // Update task
+    task.status = status;
+    task.updates.push({
+      status,
+      comments: comments || '',
+      updatedBy: userId,
+      workFile: workFileUrl
+    });
+
+    await task.save();
+
+    // Create notification for faculty
+    await createNotification({
+      user: task.project.faculty,
+      type: 'task',
+      title: 'Task Work Submitted',
+      body: `${user.name} submitted work for task: ${task.title}`,
+      link: `/tasks/${task._id}`
+    });
+
+    // Update milestone progress if task is completed
+    if (status === 'completed') {
+      await updateMilestoneProgress(task.project._id);
+    }
+
+    res.status(200).json({ message: 'Task updated with work submission', task });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get project students for task assignment
+export const getProjectStudents = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { facultyId } = req.query;
+
+    const faculty = await User.findById(facultyId);
+    if (!faculty || faculty.role !== 'faculty') {
+      return res.status(403).json({ message: 'Only faculty can view project students' });
+    }
+
+    const project = await Project.findById(projectId)
+      .populate('currentStudents', 'name email academicInterests');
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (project.faculty.toString() !== facultyId) {
+      return res.status(403).json({ message: 'Only project faculty can view students' });
+    }
+
+    res.status(200).json({ students: project.currentStudents });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });

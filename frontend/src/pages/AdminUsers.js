@@ -11,7 +11,7 @@ export default function AdminUsers({ user }) {
     if (!isAdmin) return;
     setError('');
     try {
-      const res = await fetch(`http://localhost:5001/api/auth/users?adminId=${user.id}`);
+      const res = await fetch(`http://localhost:5001/api/users?adminId=${user.id}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to load users');
       setUsers(data.users || []);
@@ -29,7 +29,7 @@ export default function AdminUsers({ user }) {
 
   const setRole = async (targetUserId, role) => {
     try {
-      const res = await fetch(`http://localhost:5001/api/auth/users/${targetUserId}/role`, {
+      const res = await fetch(`http://localhost:5001/api/users/${targetUserId}/role`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminId: user.id, role })

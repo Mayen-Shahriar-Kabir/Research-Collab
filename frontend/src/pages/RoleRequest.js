@@ -17,7 +17,7 @@ export default function RoleRequest({ user, setUser }) {
   const submitRequest = async () => {
     setStatus('');
     try {
-      const res = await fetch('http://localhost:5001/api/auth/role/request', {
+      const res = await fetch('http://localhost:5001/api/role/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, role: desiredRole })

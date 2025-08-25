@@ -10,6 +10,12 @@ import RoleRequest from './pages/RoleRequest';
 import NewProject from './pages/NewProject';
 import ApplicationsReview from './pages/ApplicationsReview';
 import Navbar from "./components/navbar";
+import ProjectsPage from './pages/ProjectsPage';
+import TasksPage from './pages/TasksPage';
+import BookmarksPage from './pages/BookmarksPage';
+import NotificationsPage from './pages/NotificationsPage';
+import ProjectManagement from './components/ProjectManagement';
+import Dashboard from './pages/Dashboard';
 import './App.css';
 
 function App() {
@@ -47,6 +53,13 @@ function App() {
             <Route path='/role-request' element={<RoleRequest user={user} setUser={setUser} />} />
             <Route path='/projects/new' element={<NewProject user={user} />} />
             <Route path='/applications-review' element={<ApplicationsReview user={user} />} />
+            <Route path='/projects' element={<ProjectsPage userRole={user?.role} userId={user?.id} />} />
+            <Route path='/tasks' element={<TasksPage userId={user?.id} userRole={user?.role} />} />
+            <Route path='/tasks/:taskId' element={<TasksPage userId={user?.id} userRole={user?.role} />} />
+            <Route path='/bookmarks' element={<BookmarksPage userId={user?.id} />} />
+            <Route path='/notifications' element={<NotificationsPage userId={user?.id} />} />
+            <Route path='/project-management' element={<ProjectManagement user={user} />} />
+            <Route path='/dashboard' element={<Dashboard userId={user?.id || user?._id} userRole={user?.role} />} />
           </Routes>
         </div>
       </BrowserRouter>
