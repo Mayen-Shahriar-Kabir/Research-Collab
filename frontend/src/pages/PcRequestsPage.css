@@ -1,0 +1,5 @@
+/* Reuse the same design system as AdminPcManagement */
+@import './AdminPcManagement.css';
+
+/* Page-specific tweaks (optional) */
+.pcm-label-block { display: grid; gap: 6px; }

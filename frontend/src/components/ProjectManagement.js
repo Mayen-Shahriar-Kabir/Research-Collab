@@ -10,6 +10,7 @@ const ProjectManagement = ({ user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [feedbackMap, setFeedbackMap] = useState({});
 
   // Form states
   const [editMode, setEditMode] = useState(false);
@@ -91,6 +92,66 @@ const ProjectManagement = ({ user }) => {
     } catch (err) {
       console.error('Error fetching projects:', err);
       setError('Failed to fetch projects');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Approve/Reject a completed task (faculty only)
+  const handleTaskApproval = async (taskId, approved, comments = '') => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await fetch(`${apiUrl}/tasks/${taskId}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          approved,
+          feedback: comments,
+          facultyId: userId
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update approval');
+      }
+
+      // Update tasks list with returned task
+      setTasks(prev => prev.map(t => (t._id === taskId ? data.task : t)));
+    } catch (err) {
+      setError(err.message || 'Failed to update approval');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleIssueCertificate = async (studentId) => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await fetch(`${apiUrl}/certificates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          projectId: selectedProject._id,
+          studentId,
+          facultyId: userId
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to issue certificate');
+      }
+      alert('Certificate issued successfully');
+    } catch (err) {
+      setError(err.message || 'Failed to issue certificate');
     } finally {
       setLoading(false);
     }
@@ -407,6 +468,34 @@ const ProjectManagement = ({ user }) => {
           <div className="stat-number">{tasks.filter(t => t.status === 'completed').length}</div>
         </div>
       </div>
+
+      {/* Students & Certificates */}
+      <div className="students-section">
+        <h3>Current Students</h3>
+        {students.length === 0 ? (
+          <p>No students added yet.</p>
+        ) : (
+          <div className="students-list">
+            {students.map(s => (
+              <div key={s._id} className="student-item">
+                <div className="student-info">
+                  <strong>{s.name}</strong>
+                  <span style={{ marginLeft: 8 }}>{s.email}</span>
+                </div>
+                <div className="student-actions">
+                  <button
+                    className="issue-cert-btn"
+                    onClick={() => handleIssueCertificate(s._id)}
+                    disabled={loading || !selectedProject}
+                  >
+                    {loading ? 'Working...' : 'Issue Certificate'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -558,6 +647,48 @@ const ProjectManagement = ({ user }) => {
                       <small>{new Date(update.updatedAt).toLocaleString()}</small>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Faculty approval controls */}
+              {task.status === 'completed' && task.updates && task.updates.length > 0 && (
+                <div className="approval-controls" style={{ marginTop: '12px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+                  {task.updates[task.updates.length - 1].approved ? (
+                    <div className="approved-status" style={{ color: '#28a745', fontWeight: 600 }}>
+                      ✅ Approved by faculty
+                    </div>
+                  ) : (
+                    <>
+                      <div className="form-group">
+                        <label>Feedback (optional):</label>
+                        <textarea
+                          className="form-control"
+                          rows="2"
+                          placeholder="Add feedback for the student..."
+                          value={feedbackMap[task._id] || ''}
+                          onChange={(e) => setFeedbackMap(prev => ({ ...prev, [task._id]: e.target.value }))}
+                        />
+                      </div>
+                      <div className="approval-buttons-row" style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                          type="button"
+                          className="approve-btn"
+                          onClick={() => handleTaskApproval(task._id, true, feedbackMap[task._id] || 'Task approved')}
+                          disabled={loading}
+                        >
+                          ✅ Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="reject-btn"
+                          onClick={() => handleTaskApproval(task._id, false, feedbackMap[task._id] || 'Task needs revision')}
+                          disabled={loading}
+                        >
+                          ❌ Reject
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

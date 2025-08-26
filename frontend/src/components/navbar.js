@@ -99,11 +99,27 @@ export default function Navbar({ user, setUser }) {
                   </Link>
                 </li>
               )}
+              {user.role === 'student' && (
+                <li>
+                  <Link className={linkClass("/pc-requests")} to="/pc-requests" aria-label="PC Requests">
+                    <i className="nav-icon">🖥️</i>
+                    <span className="label">PC Requests</span>
+                  </Link>
+                </li>
+              )}
               {user.role === 'faculty' && (
                 <li>
                   <Link className={linkClass("/project-management")} to="/project-management" aria-label="Manage Projects">
                     <i className="nav-icon">⚙️</i>
                     <span className="label">Manage Projects</span>
+                  </Link>
+                </li>
+              )}
+              {user.role === 'admin' && (
+                <li>
+                  <Link className={linkClass("/admin/pc")} to="/admin/pc" aria-label="PC Management">
+                    <i className="nav-icon">🖥️</i>
+                    <span className="label">PC Management</span>
                   </Link>
                 </li>
               )}

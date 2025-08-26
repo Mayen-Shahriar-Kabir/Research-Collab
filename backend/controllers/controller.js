@@ -6,6 +6,8 @@ import Notification from "../models/Notification.js";
 import Certificate from "../models/Certificate.js";
 import LabAccessRequest from "../models/LabAccessRequest.js";
 import TimelineExtensionRequest from "../models/TimelineExtensionRequest.js";
+import Computer from "../models/Computer.js";
+import PcRequest from "../models/PcRequest.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
@@ -1606,6 +1608,270 @@ export const getProjectStudents = async (req, res) => {
     }
 
     res.status(200).json({ students: project.currentStudents });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// =========================
+// COMPUTER INVENTORY & PC REQUESTS
+// =========================
+
+// Admin: create computer
+export const createComputer = async (req, res) => {
+  try {
+    const { adminId, name, location, specs, status, tags } = req.body;
+
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can add computers' });
+    }
+
+    const comp = new Computer({
+      name,
+      location: location || '',
+      specs: specs || '',
+      status: status || 'active',
+      tags: Array.isArray(tags) ? tags : [],
+      createdBy: adminId
+    });
+
+    await comp.save();
+    res.status(201).json({ message: 'Computer created', computer: comp });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Admin: update computer
+export const updateComputer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminId, name, location, specs, status, tags } = req.body;
+
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can update computers' });
+    }
+
+    const comp = await Computer.findById(id);
+    if (!comp) return res.status(404).json({ message: 'Computer not found' });
+
+    if (name !== undefined) comp.name = name;
+    if (location !== undefined) comp.location = location;
+    if (specs !== undefined) comp.specs = specs;
+    if (status !== undefined) comp.status = status;
+    if (tags !== undefined) comp.tags = Array.isArray(tags) ? tags : [];
+
+    await comp.save();
+    res.status(200).json({ message: 'Computer updated', computer: comp });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// List computers (open to all; frontend can filter by status)
+export const listComputers = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    const computers = await Computer.find(filter).sort({ createdAt: -1 });
+    res.status(200).json({ computers });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Student: create PC request
+export const createPcRequest = async (req, res) => {
+  try {
+    const { studentId, desiredStart, desiredEnd, purpose, preferredComputer } = req.body;
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can request PCs' });
+    }
+
+    const start = new Date(desiredStart);
+    const end = new Date(desiredEnd);
+    if (!(start instanceof Date) || isNaN(start) || !(end instanceof Date) || isNaN(end) || start >= end) {
+      return res.status(400).json({ message: 'Invalid start/end time' });
+    }
+
+    const reqDoc = new PcRequest({
+      student: studentId,
+      desiredStart: start,
+      desiredEnd: end,
+      purpose: purpose || ''
+    });
+
+    // If student selected a preferred computer, validate and attach
+    if (preferredComputer) {
+      const pref = await Computer.findById(preferredComputer);
+      if (pref) {
+        reqDoc.preferredComputer = pref._id;
+      }
+    }
+    await reqDoc.save();
+
+    // Notify admin(s) - for simplicity, notify the default admin account
+    const admin = await User.findOne({ role: 'admin' });
+    if (admin) {
+      await createNotification({
+        user: admin._id,
+        type: 'system',
+        title: 'New PC Request',
+        body: `${student.name} requested a PC from ${start.toLocaleString()} to ${end.toLocaleString()}`,
+        link: `/pc-requests/${reqDoc._id}`
+      });
+    }
+
+    res.status(201).json({ message: 'PC request submitted', request: reqDoc });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Student: list own PC requests
+export const listMyPcRequests = async (req, res) => {
+  try {
+    const { studentId } = req.query;
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can view their requests' });
+    }
+    const requests = await PcRequest.find({ student: studentId })
+      .populate('computer')
+      .populate('preferredComputer')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Admin: list PC requests (optionally by status)
+export const listPcRequests = async (req, res) => {
+  try {
+    const { adminId, status } = req.query;
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can view PC requests' });
+    }
+    const filter = {};
+    if (status) filter.status = status;
+    const requests = await PcRequest.find(filter)
+      .populate('student', 'name email')
+      .populate('computer')
+      .populate('preferredComputer')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Helper to check overlap of allocations for a computer
+const hasOverlap = async (computerId, start, end) => {
+  const overlap = await PcRequest.find({
+    computer: computerId,
+    status: 'approved',
+    slotStart: { $lt: end },
+    slotEnd: { $gt: start }
+  }).limit(1);
+  return overlap.length > 0;
+};
+
+// Admin: approve PC request with allocation
+export const approvePcRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminId, computerId, slotStart, slotEnd, adminNote } = req.body;
+
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can approve PC requests' });
+    }
+
+    const request = await PcRequest.findById(requestId).populate('student');
+    if (!request) return res.status(404).json({ message: 'PC request not found' });
+
+    const computer = await Computer.findById(computerId);
+    if (!computer || computer.status !== 'active') {
+      return res.status(400).json({ message: 'Computer not available' });
+    }
+
+    const start = new Date(slotStart);
+    const end = new Date(slotEnd);
+    if (!(start instanceof Date) || isNaN(start) || !(end instanceof Date) || isNaN(end) || start >= end) {
+      return res.status(400).json({ message: 'Invalid allocation time' });
+    }
+
+    // Check overlap
+    const overlap = await hasOverlap(computerId, start, end);
+    if (overlap) {
+      return res.status(409).json({ message: 'Time slot overlaps with an existing allocation' });
+    }
+
+    request.status = 'approved';
+    request.computer = computerId;
+    request.slotStart = start;
+    request.slotEnd = end;
+    request.adminNote = adminNote || '';
+    await request.save();
+
+    // Notify student
+    await createNotification({
+      user: request.student._id,
+      type: 'system',
+      title: 'PC Request Approved',
+      body: `Your PC request has been approved. Computer: ${computer.name}, Slot: ${start.toLocaleString()} - ${end.toLocaleString()}`,
+      link: `/pc-requests/${request._id}`
+    });
+
+    res.status(200).json({ message: 'PC request approved', request });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Admin: reject PC request
+export const rejectPcRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminId, adminNote } = req.body;
+
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can reject PC requests' });
+    }
+
+    const request = await PcRequest.findById(requestId).populate('student');
+    if (!request) return res.status(404).json({ message: 'PC request not found' });
+
+    request.status = 'rejected';
+    request.adminNote = adminNote || '';
+    await request.save();
+
+    // Notify student
+    await createNotification({
+      user: request.student._id,
+      type: 'system',
+      title: 'PC Request Rejected',
+      body: `Your PC request has been rejected.${adminNote ? ' Note: ' + adminNote : ''}`,
+      link: `/pc-requests/${request._id}`
+    });
+
+    res.status(200).json({ message: 'PC request rejected', request });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });

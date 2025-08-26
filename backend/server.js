@@ -16,6 +16,8 @@ import notificationRoutes from "./routes/notifications.js";
 import certificateRoutes from "./routes/certificates.js";
 import labAccessRoutes from "./routes/labAccess.js";
 import timelineExtensionRoutes from "./routes/timelineExtensions.js";
+import computerRoutes from "./routes/computers.js";
+import pcRequestRoutes from "./routes/pcRequests.js";
 import User from "./models/model.js";
 
 // Load environment variables
@@ -78,6 +80,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/lab-access", labAccessRoutes);
 app.use("/api/timeline-extensions", timelineExtensionRoutes);
+app.use("/api/computers", computerRoutes);
+app.use("/api/pc-requests", pcRequestRoutes);
 
 // Return JSON for unmatched API routes to avoid HTML responses in frontend
 app.use('/api', (req, res) => {

@@ -16,6 +16,9 @@ import BookmarksPage from './pages/BookmarksPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProjectManagement from './components/ProjectManagement';
 import Dashboard from './pages/Dashboard';
+import PcRequestsPage from './pages/PcRequestsPage';
+import AdminPcManagement from './pages/AdminPcManagement';
+import CertificatesPage from './pages/CertificatesPage';
 import './App.css';
 
 function App() {
@@ -54,12 +57,15 @@ function App() {
             <Route path='/projects/new' element={<NewProject user={user} />} />
             <Route path='/applications-review' element={<ApplicationsReview user={user} />} />
             <Route path='/projects' element={<ProjectsPage userRole={user?.role} userId={user?.id} />} />
-            <Route path='/tasks' element={<TasksPage userId={user?.id} userRole={user?.role} />} />
-            <Route path='/tasks/:taskId' element={<TasksPage userId={user?.id} userRole={user?.role} />} />
+            <Route path='/tasks' element={<TasksPage userId={user?.id || user?._id} userRole={user?.role} />} />
+            <Route path='/tasks/:taskId' element={<TasksPage userId={user?.id || user?._id} userRole={user?.role} />} />
             <Route path='/bookmarks' element={<BookmarksPage userId={user?.id} />} />
             <Route path='/notifications' element={<NotificationsPage userId={user?.id} />} />
             <Route path='/project-management' element={<ProjectManagement user={user} />} />
             <Route path='/dashboard' element={<Dashboard userId={user?.id || user?._id} userRole={user?.role} />} />
+            <Route path='/pc-requests' element={<PcRequestsPage user={user} />} />
+            <Route path='/admin/pc' element={<AdminPcManagement user={user} />} />
+            <Route path='/certificates' element={<CertificatesPage userId={user?.id || user?._id} />} />
           </Routes>
         </div>
       </BrowserRouter>
