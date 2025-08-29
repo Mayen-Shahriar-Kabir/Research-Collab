@@ -51,7 +51,7 @@ function App() {
             <Route path='/login' element={<Login setUser={setUser} />} />
             <Route path='/register' element={<Register />} />
             <Route path='/user' element={<User user={user} />} />
-            <Route path='/profile' element={<ProfilePage userId={user?.id} user={user} />} />
+            <Route path='/profile' element={<ProfilePage userId={user?.id || user?._id} user={user} />} />
             <Route path='/admin/users' element={<AdminUsers user={user} />} />
             <Route path='/role-request' element={<RoleRequest user={user} setUser={setUser} />} />
             <Route path='/projects/new' element={<NewProject user={user} />} />

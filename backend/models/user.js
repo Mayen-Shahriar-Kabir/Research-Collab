@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema({
     institution: String,
     publications: [{ title: String, url: String }],
     cgpa: { type: Number, min: 0, max: 4.0 },
+    studentId: String,
+    program: { type: String, enum: ['Undergraduate', 'Postgraduate'] },
+    department: String,
   },
 });
 

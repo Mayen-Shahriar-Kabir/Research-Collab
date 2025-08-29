@@ -52,6 +52,14 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
+    // Check if user is frozen
+    if (user.frozen) {
+      return res.status(403).json({ 
+        message: "Your account has been frozen. Please contact an administrator.",
+        frozen: true 
+      });
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -147,13 +155,26 @@ export const getProfile = async (req, res) => {
     }
     
     // Check if userId is valid MongoDB ObjectId format
-    if (userId.length !== 24) {
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
       console.log('Invalid userId format:', userId, 'Length:', userId.length);
       return res.status(400).json({ message: "Invalid user ID format" });
     }
     
     const user = await User.findById(userId);
     console.log('User found:', user ? 'Yes' : 'No');
+    console.log('Full user object:', JSON.stringify(user, null, 2));
+    console.log('User object fields:', {
+      name: user?.name,
+      email: user?.email,
+      studentId: user?.studentId,
+      program: user?.program,
+      department: user?.department,
+      institution: user?.institution,
+      cgpa: user?.cgpa,
+      academicInterests: user?.academicInterests,
+      publications: user?.publications,
+      profilePhoto: user?.profilePhoto
+    });
     
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -161,9 +182,12 @@ export const getProfile = async (req, res) => {
 
     const profileData = {
       profile: {
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        name: user.name || '',
+        email: user.email || '',
+        role: user.role || '',
+        studentId: user.studentId || '',
+        program: user.program || '',
+        department: user.department || '',
         institution: user.institution || '',
         academicInterests: user.academicInterests || [],
         publications: user.publications || [],
@@ -184,15 +208,23 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, institution, academicInterests, publications, cgpa } = req.body;
+    const { name, studentId, program, department, institution, academicInterests, publications, cgpa } = req.body;
     
     console.log('Updating profile for userId:', userId);
     console.log('Request body:', req.body);
+
+    // Validate userId format
+    if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
         name,
+        studentId,
+        program,
+        department,
         institution,
         academicInterests,
         publications,
@@ -210,8 +242,12 @@ export const updateProfile = async (req, res) => {
 
     res.status(200).json({
       profile: {
-        name: updatedUser.name,
-        email: updatedUser.email,
+        name: updatedUser.name || '',
+        email: updatedUser.email || '',
+        role: updatedUser.role || '',
+        studentId: updatedUser.studentId || '',
+        program: updatedUser.program || '',
+        department: updatedUser.department || '',
         institution: updatedUser.institution || '',
         academicInterests: updatedUser.academicInterests || [],
         publications: updatedUser.publications || [],
@@ -1875,5 +1911,67 @@ export const rejectPcRequest = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Freeze user functionality for admin
+export const freezeUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(400).json({ message: 'Cannot freeze admin users' });
+    }
+
+    user.frozen = true;
+    await user.save();
+
+    // Create notification for frozen user
+    await createNotification({
+      user: userId,
+      type: 'system',
+      title: 'Account Frozen',
+      body: 'Your account has been frozen by an administrator. Please contact support for assistance.',
+      link: '/profile'
+    });
+
+    res.json({ message: `User ${user.name} has been frozen` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error while freezing user' });
+  }
+};
+
+// Unfreeze user functionality for admin
+export const unfreezeUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.frozen = false;
+    await user.save();
+
+    // Create notification for unfrozen user
+    await createNotification({
+      user: userId,
+      type: 'system',
+      title: 'Account Unfrozen',
+      body: 'Your account has been unfrozen. You can now access all features.',
+      link: '/home'
+    });
+
+    res.json({ message: `User ${user.name} has been unfrozen` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error while unfreezing user' });
   }
 };

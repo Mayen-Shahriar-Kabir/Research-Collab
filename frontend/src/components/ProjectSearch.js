@@ -6,8 +6,8 @@ const ProjectSearch = ({ userRole, userId }) => {
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [bookmarkedProjects, setBookmarkedProjects] = useState(new Set());
+  const [uniqueFaculty, setUniqueFaculty] = useState([]);
   const [filters, setFilters] = useState({
-    domain: '',
     faculty: '',
     status: '',
     search: ''
@@ -15,12 +15,6 @@ const ProjectSearch = ({ userRole, userId }) => {
 
   const applyFilters = useCallback(() => {
     let filtered = projects;
-
-    if (filters.domain) {
-      filtered = filtered.filter(project => 
-        project.domain.toLowerCase().includes(filters.domain.toLowerCase())
-      );
-    }
 
     if (filters.faculty) {
       filtered = filtered.filter(project => 
@@ -59,7 +53,13 @@ const ProjectSearch = ({ userRole, userId }) => {
       const isJson = (response.headers.get('content-type') || '').includes('application/json');
       if (response.ok) {
         const data = isJson ? await response.json() : await response.text();
-        setProjects(Array.isArray(data) ? data : []);
+        const projectsArray = Array.isArray(data) ? data : [];
+        setProjects(projectsArray);
+        
+        // Extract unique faculty for filters
+        const faculty = [...new Set(projectsArray.map(p => p.faculty?.name || p.faculty?.profile?.name).filter(Boolean))];
+        
+        setUniqueFaculty(faculty.sort());
       } else {
         const data = isJson ? await response.json() : await response.text();
         console.error('Error fetching projects:', data);
@@ -97,7 +97,6 @@ const ProjectSearch = ({ userRole, userId }) => {
 
   const clearFilters = () => {
     setFilters({
-      domain: '',
       faculty: '',
       status: '',
       search: ''
@@ -190,28 +189,26 @@ const ProjectSearch = ({ userRole, userId }) => {
       <div className="search-header">
         <h2>Research Projects</h2>
         <div className="search-filters">
-          <div className="filter-row">
+          <div className="search-row">
             <input
               type="text"
-              placeholder="Search projects..."
+              placeholder="Search projects by title or description..."
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="search-input"
+              className="main-search-input"
             />
-            <input
-              type="text"
-              placeholder="Filter by domain..."
-              value={filters.domain}
-              onChange={(e) => handleFilterChange('domain', e.target.value)}
-              className="filter-input"
-            />
-            <input
-              type="text"
-              placeholder="Filter by faculty name..."
+          </div>
+          <div className="filter-row">
+            <select
               value={filters.faculty}
               onChange={(e) => handleFilterChange('faculty', e.target.value)}
-              className="filter-input"
-            />
+              className="filter-select"
+            >
+              <option value="">All Faculty</option>
+              {uniqueFaculty.map(faculty => (
+                <option key={faculty} value={faculty}>{faculty}</option>
+              ))}
+            </select>
             <select
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}

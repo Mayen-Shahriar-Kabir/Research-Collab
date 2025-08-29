@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import './ProfileManager.css';
 
 const ProfileManager = ({ userId }) => {
-  const [profile, setProfile] = useState({
-    profile: {
-      name: '',
-      academicInterests: [],
-      institution: '',
-      publications: [],
-      profilePhoto: null,
-      cgpa: ''
+  const [profile, setProfile] = useState(() => {
+    // Try to load profile from localStorage on initial render
+    try {
+      const savedProfile = localStorage.getItem(`profile_${userId}`);
+      return savedProfile ? JSON.parse(savedProfile) : null;
+    } catch (error) {
+      console.error('Error loading profile from localStorage:', error);
+      return null;
     }
   });
   const [isEditing, setIsEditing] = useState(false);
@@ -21,8 +21,23 @@ const ProfileManager = ({ userId }) => {
   const [photoPreview, setPhotoPreview] = useState(null);
 
   useEffect(() => {
+    console.log('ProfileManager useEffect triggered with userId:', userId);
     if (userId) {
-      fetchProfile();
+      // Check if we have cached profile data
+      const savedProfile = localStorage.getItem(`profile_${userId}`);
+      if (savedProfile && !profile) {
+        try {
+          setProfile(JSON.parse(savedProfile));
+          setLoading(false);
+        } catch (error) {
+          console.error('Error parsing saved profile:', error);
+          fetchProfile();
+        }
+      } else if (!profile) {
+        fetchProfile();
+      } else {
+        setLoading(false);
+      }
     } else {
       console.log('No userId provided, skipping profile fetch');
       setLoading(false);
@@ -32,16 +47,37 @@ const ProfileManager = ({ userId }) => {
   const fetchProfile = async () => {
     try {
       console.log('Fetching profile for userId:', userId);
-      const response = await fetch(`http://localhost:5001/api/profile/${userId}`);
-      console.log('Fetch response status:', response.status);
+      
+      if (!userId) {
+        console.error('No userId provided');
+        setLoading(false);
+        return;
+      }
+      
+      const url = `http://localhost:5001/api/profile/${userId}`;
+      console.log('Making request to URL:', url);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
       
       if (response.ok) {
         const data = await response.json();
         console.log('Profile data received:', data);
         setProfile(data);
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem(`profile_${userId}`, JSON.stringify(data));
+        } catch (error) {
+          console.error('Error saving profile to localStorage:', error);
+        }
       } else {
-        console.error('Failed to fetch profile, status:', response.status);
-        // Initialize with empty profile if fetch fails
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        console.error('Failed to fetch profile:', errorData);
+        
         setProfile({
           profile: {
             name: '',
@@ -50,13 +86,16 @@ const ProfileManager = ({ userId }) => {
             academicInterests: [],
             publications: [],
             profilePhoto: null,
-            cgpa: ''
+            cgpa: '',
+            studentId: '',
+            program: '',
+            department: ''
           }
         });
       }
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      // Initialize with empty profile on error
+      console.error('Network error fetching profile:', error);
+      
       setProfile({
         profile: {
           name: '',
@@ -65,7 +104,10 @@ const ProfileManager = ({ userId }) => {
           academicInterests: [],
           publications: [],
           profilePhoto: null,
-          cgpa: ''
+          cgpa: '',
+          studentId: '',
+          program: '',
+          department: ''
         }
       });
     } finally {
@@ -106,12 +148,6 @@ const ProfileManager = ({ userId }) => {
   };
 
   const handleSave = async () => {
-    console.log('=== SAVE ATTEMPT ===');
-    console.log('userId:', userId);
-    console.log('userId type:', typeof userId);
-    console.log('userId length:', userId?.length);
-    console.log('Profile data being sent:', profile.profile);
-    
     if (!userId) {
       alert('Error: No user ID available. Please log in again.');
       return;
@@ -119,7 +155,6 @@ const ProfileManager = ({ userId }) => {
     
     try {
       const url = `http://localhost:5001/api/profile/${userId}`;
-      console.log('Making request to:', url);
       
       const response = await fetch(url, {
         method: 'PUT',
@@ -129,26 +164,20 @@ const ProfileManager = ({ userId }) => {
         body: JSON.stringify(profile.profile),
       });
       
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-      
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-      
       if (response.ok) {
+        const updatedProfile = await response.json();
+        setProfile(updatedProfile);
+        // Update localStorage with new data
         try {
-          const updatedProfile = JSON.parse(responseText);
-          console.log('Updated profile received:', updatedProfile);
-          setProfile(updatedProfile);
-          setIsEditing(false);
-          alert('Profile updated successfully!');
-        } catch (parseError) {
-          console.error('JSON parse error:', parseError);
-          alert('Error parsing server response');
+          localStorage.setItem(`profile_${userId}`, JSON.stringify(updatedProfile));
+        } catch (error) {
+          console.error('Error saving updated profile to localStorage:', error);
         }
+        setIsEditing(false);
+        alert('Profile updated successfully!');
       } else {
-        console.error('Server error response:', responseText);
-        alert('Failed to update profile: ' + response.status);
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        alert('Failed to update profile: ' + errorData.message);
       }
     } catch (error) {
       console.error('Network error:', error);
@@ -260,6 +289,19 @@ const ProfileManager = ({ userId }) => {
     );
   }
 
+  if (!profile) {
+    return (
+      <div className="profile-manager">
+        <div className="profile-header">
+          <h2>Profile Information</h2>
+        </div>
+        <div className="profile-content">
+          <p>Loading profile data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="profile-manager">
       <div className="profile-header">
@@ -273,6 +315,7 @@ const ProfileManager = ({ userId }) => {
       </div>
 
       <div className="profile-content">
+        
         {/* Profile Photo Section */}
         <div className="form-group profile-photo-section">
           <label>Profile Photo</label>
@@ -325,6 +368,62 @@ const ProfileManager = ({ userId }) => {
             />
           ) : (
             <p className="profile-value">{profile.profile?.name || 'Not specified'}</p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Student ID</label>
+          {isEditing ? (
+            <input
+              type="text"
+              value={profile.profile?.studentId || ''}
+              onChange={(e) => setProfile(prev => ({
+                ...prev,
+                profile: { ...prev.profile, studentId: e.target.value }
+              }))}
+              className="form-control"
+              placeholder="Enter your student ID"
+            />
+          ) : (
+            <p className="profile-value">{profile.profile?.studentId || 'Not specified'}</p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Program</label>
+          {isEditing ? (
+            <select
+              value={profile.profile?.program || ''}
+              onChange={(e) => setProfile(prev => ({
+                ...prev,
+                profile: { ...prev.profile, program: e.target.value }
+              }))}
+              className="form-control"
+            >
+              <option value="">Select Program</option>
+              <option value="Undergraduate">Undergraduate</option>
+              <option value="Postgraduate">Postgraduate</option>
+            </select>
+          ) : (
+            <p className="profile-value">{profile.profile?.program || 'Not specified'}</p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Department</label>
+          {isEditing ? (
+            <input
+              type="text"
+              value={profile.profile?.department || ''}
+              onChange={(e) => setProfile(prev => ({
+                ...prev,
+                profile: { ...prev.profile, department: e.target.value }
+              }))}
+              className="form-control"
+              placeholder="Enter your department"
+            />
+          ) : (
+            <p className="profile-value">{profile.profile?.department || 'Not specified'}</p>
           )}
         </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css';
+import MatchingSuggestions from '../components/MatchingSuggestions';
 
 const Dashboard = ({ userId, userRole }) => {
   const [user, setUser] = useState(null);
@@ -215,6 +216,14 @@ const Dashboard = ({ userId, userRole }) => {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Faculty Matching Suggestions Card */}
+        <div className="dashboard-card matching-suggestions-card">
+          <MatchingSuggestions 
+            userId={userId || (user && (user.id || user._id))} 
+            userRole={userRole || user?.role || 'student'} 
+          />
         </div>
       </div>
     </div>

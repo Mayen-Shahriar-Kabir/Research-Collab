@@ -1,5 +1,5 @@
 import express from "express";
-import { registerUser, loginUser, getProfile, updateProfile, uploadProfilePhoto, upload, requestRole, approveRole, listRoleRequests, getUsers, setUserRole, createPublication, uploadPublicationFile, listPublications, uploadPublicationFileMiddleware } from "../controllers/controller.js";
+import { registerUser, loginUser, getProfile, updateProfile, uploadProfilePhoto, upload, requestRole, approveRole, listRoleRequests, createPublication, uploadPublicationFile, listPublications, uploadPublicationFileMiddleware } from "../controllers/controller.js";
 
 const router = express.Router();
 
@@ -24,8 +24,6 @@ router.post('/role/request', requestRole); // body: { userId, role }
 router.post('/role/approve', approveRole); // body: { adminId, userId }
 router.get('/role/requests', listRoleRequests); // query: ?adminId=
 
-// Admin user management
-router.get('/users', getUsers); // query: ?adminId=
-router.put('/users/:userId/role', setUserRole); // body: { adminId, role }
+// Note: Admin user management routes moved to /api/admin routes
 
 export default router;

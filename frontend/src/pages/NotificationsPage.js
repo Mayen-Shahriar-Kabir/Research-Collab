@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 export default function NotificationsPage({ userId }) {
   const [items, setItems] = useState([]);
@@ -66,7 +67,11 @@ export default function NotificationsPage({ userId }) {
             </div>
             <div>{n.body}</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {n.link && <a className="btn" href={n.link}>Open</a>}
+              {n.link && (
+                <Link to={n.link.startsWith('/') ? n.link : `/${n.link}`} className="btn">
+                  Open
+                </Link>
+              )}
               <button className="btn" onClick={() => toggleRead(n._id, n.read)}>{n.read ? 'Mark Unread' : 'Mark Read'}</button>
               <button className="btn btn-danger" onClick={() => remove(n._id)}>Delete</button>
             </div>

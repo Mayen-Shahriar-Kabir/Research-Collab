@@ -11,7 +11,7 @@ export default function AdminUsers({ user }) {
     if (!isAdmin) return;
     setError('');
     try {
-      const res = await fetch(`http://localhost:5001/api/users?adminId=${user.id}`);
+      const res = await fetch(`http://localhost:5001/api/admin/users?adminId=${user.id}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to load users');
       setUsers(data.users || []);
@@ -29,7 +29,7 @@ export default function AdminUsers({ user }) {
 
   const setRole = async (targetUserId, role) => {
     try {
-      const res = await fetch(`http://localhost:5001/api/users/${targetUserId}/role`, {
+      const res = await fetch(`http://localhost:5001/api/admin/users/${targetUserId}/role`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminId: user.id, role })
@@ -37,6 +37,36 @@ export default function AdminUsers({ user }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to set role');
       setUsers(prev => prev.map(u => u._id === targetUserId ? { ...u, role, roleRequest: null } : u));
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const freezeUser = async (targetUserId) => {
+    try {
+      const res = await fetch(`http://localhost:5001/api/admin/users/${targetUserId}/freeze`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to freeze user');
+      setUsers(prev => prev.map(u => u._id === targetUserId ? { ...u, frozen: true } : u));
+      alert(data.message);
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const unfreezeUser = async (targetUserId) => {
+    try {
+      const res = await fetch(`http://localhost:5001/api/admin/users/${targetUserId}/unfreeze`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to unfreeze user');
+      setUsers(prev => prev.map(u => u._id === targetUserId ? { ...u, frozen: false } : u));
+      alert(data.message);
     } catch (e) {
       alert(e.message);
     }
@@ -60,26 +90,54 @@ export default function AdminUsers({ user }) {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
+                  <th>Status</th>
                   <th>Requested</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map(u => (
-                  <tr key={u._id}>
+                  <tr key={u._id} style={{ backgroundColor: u.frozen ? '#ffebee' : 'transparent' }}>
                     <td>{u.name || '-'}</td>
                     <td>{u.email}</td>
                     <td>{u.role}</td>
+                    <td>
+                      <span className={`status-badge ${u.frozen ? 'frozen' : 'active'}`}>
+                        {u.frozen ? 'Frozen' : 'Active'}
+                      </span>
+                    </td>
                     <td>{u.roleRequest || '-'}</td>
                     <td className="actions-cell">
-                      <select
-                        value={u.role}
-                        onChange={e => setRole(u._id, e.target.value)}
-                      >
-                        <option value="student">student</option>
-                        <option value="faculty">faculty</option>
-                        <option value="admin">admin</option>
-                      </select>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <select
+                          value={u.role}
+                          onChange={e => setRole(u._id, e.target.value)}
+                          disabled={u.role === 'admin'}
+                        >
+                          <option value="student">student</option>
+                          <option value="faculty">faculty</option>
+                          <option value="admin">admin</option>
+                        </select>
+                        {u.role !== 'admin' && (
+                          u.frozen ? (
+                            <button 
+                              className="btn btn-success" 
+                              onClick={() => unfreezeUser(u._id)}
+                              style={{ fontSize: '12px', padding: '4px 8px' }}
+                            >
+                              Unfreeze
+                            </button>
+                          ) : (
+                            <button 
+                              className="btn btn-danger" 
+                              onClick={() => freezeUser(u._id)}
+                              style={{ fontSize: '12px', padding: '4px 8px' }}
+                            >
+                              Freeze
+                            </button>
+                          )
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

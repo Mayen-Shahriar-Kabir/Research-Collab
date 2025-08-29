@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import User from '../models/model.js';
 
 // Optional auth: if Authorization header present, set req.user; otherwise continue
 export default function optionalAuth(req, res, next) {
@@ -14,3 +15,29 @@ export default function optionalAuth(req, res, next) {
   }
   next();
 }
+
+// Middleware to check if user is frozen
+export const checkFrozenStatus = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return next();
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    if (user.frozen) {
+      return res.status(403).json({ 
+        message: 'Your account has been frozen. Please contact an administrator.',
+        frozen: true 
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error checking frozen status:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

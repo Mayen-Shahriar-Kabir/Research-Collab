@@ -294,7 +294,7 @@ const MessagingSystem = ({ userId, userRole }) => {
             <div className="new-chat-form">
               <input
                 type="text"
-                placeholder="Search by name or email..."
+                placeholder="Search by name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-control"
@@ -308,8 +308,11 @@ const MessagingSystem = ({ userId, userRole }) => {
                     style={{ padding: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
                     onClick={() => chooseRecipient(user)}
                   >
-                    <span>{user.name || user.profile?.name || user.email}</span>
-                    <span style={{ opacity: 0.6 }}>{user.role}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                      <span style={{ fontWeight: '500' }}>{user.name || user.profile?.name || 'No name'}</span>
+                      <span style={{ fontSize: '0.85em', color: '#666' }}>{user.email}</span>
+                    </div>
+                    <span style={{ opacity: 0.6, fontSize: '0.85em' }}>{user.role}</span>
                   </div>
                 ))}
                 {!searching && searchQuery && searchResults.length === 0 && (

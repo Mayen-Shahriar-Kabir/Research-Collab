@@ -115,6 +115,43 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// Freeze/Unfreeze user functionality for admin
+const freezeUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
+    if (user.role === 'admin') {
+      return res.status(400).json({ message: 'Cannot freeze admin users' });
+    }
 
-module.exports = { registerUser, loginUser, assignRole, getAllUsers, deleteUser };
+    user.frozen = true;
+    await user.save();
+
+    res.json({ message: `User ${user.name} has been frozen` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error while freezing user' });
+  }
+};
+
+const unfreezeUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.frozen = false;
+    await user.save();
+
+    res.json({ message: `User ${user.name} has been unfrozen` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error while unfreezing user' });
+  }
+};
+
+module.exports = { registerUser, loginUser, assignRole, getAllUsers, deleteUser, freezeUser, unfreezeUser };

@@ -7,6 +7,9 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['student', 'faculty', 'admin'], default: 'student' },
   roleRequest: { type: String, enum: ['student', 'faculty', null], default: null },
   cgpa: { type: Number, min: 0, max: 4, default: null },
+  studentId: { type: String, default: '' },
+  program: { type: String, enum: ['Undergraduate', 'Postgraduate', ''], default: '' },
+  department: { type: String, default: '' },
   institution: { type: String, default: '' },
   academicInterests: [{ type: String }],
   publications: [{
@@ -15,7 +18,8 @@ const userSchema = new mongoose.Schema({
     file: { type: String, default: '' }
   }],
   profilePhoto: { type: String, default: null },
-  bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }]
+  bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
+  frozen: { type: Boolean, default: false }
 }, { collection: "RC" }); 
 
 const User = mongoose.model("User", userSchema);

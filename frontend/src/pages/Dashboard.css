@@ -43,6 +43,11 @@
   border: 1px solid #e0e0e0;
 }
 
+.matching-suggestions-card {
+  grid-column: 1 / -1; /* Span full width */
+  padding: 0; /* Remove padding since MatchingSuggestions has its own */
+}
+
 .dashboard-card h3 {
   margin: 0 0 15px 0;
   color: #333;

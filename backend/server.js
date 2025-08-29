@@ -6,7 +6,7 @@ import authRoutes from "./routes/route.js";
 import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
-import optionalAuth from "./middleware/auth.js";
+import optionalAuth, { checkFrozenStatus } from "./middleware/auth.js";
 import projectRoutes from "./routes/projects.js";
 import applicationRoutes from "./routes/applications.js";
 import taskRoutes from "./routes/tasks.js";
@@ -18,6 +18,8 @@ import labAccessRoutes from "./routes/labAccess.js";
 import timelineExtensionRoutes from "./routes/timelineExtensions.js";
 import computerRoutes from "./routes/computers.js";
 import pcRequestRoutes from "./routes/pcRequests.js";
+import adminRoutes from "./routes/admin.js";
+import matchingRoutes from "./routes/matching.js";
 import User from "./models/model.js";
 
 // Load environment variables
@@ -33,7 +35,7 @@ app.use(cors({
     "http://127.0.0.1:3000"
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "pragma"],
   credentials: true,
 }));
 
@@ -71,17 +73,21 @@ app.use(optionalAuth);
 
 // Routes
 app.use("/api", authRoutes);  // This includes /api/profile routes
-app.use("/api/projects", projectRoutes);
-app.use("/api/applications", applicationRoutes);
-app.use("/api/tasks", taskRoutes);
-app.use("/api/messages", messageRoutes);
-app.use("/api/bookmarks", bookmarkRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/certificates", certificateRoutes);
-app.use("/api/lab-access", labAccessRoutes);
-app.use("/api/timeline-extensions", timelineExtensionRoutes);
-app.use("/api/computers", computerRoutes);
-app.use("/api/pc-requests", pcRequestRoutes);
+
+// Apply frozen status check to all protected routes
+app.use("/api/projects", checkFrozenStatus, projectRoutes);
+app.use("/api/applications", checkFrozenStatus, applicationRoutes);
+app.use("/api/tasks", checkFrozenStatus, taskRoutes);
+app.use("/api/messages", checkFrozenStatus, messageRoutes);
+app.use("/api/bookmarks", checkFrozenStatus, bookmarkRoutes);
+app.use("/api/notifications", checkFrozenStatus, notificationRoutes);
+app.use("/api/certificates", checkFrozenStatus, certificateRoutes);
+app.use("/api/lab-access", checkFrozenStatus, labAccessRoutes);
+app.use("/api/timeline-extensions", checkFrozenStatus, timelineExtensionRoutes);
+app.use("/api/computers", checkFrozenStatus, computerRoutes);
+app.use("/api/pc-requests", checkFrozenStatus, pcRequestRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/matching", checkFrozenStatus, matchingRoutes);
 
 // Return JSON for unmatched API routes to avoid HTML responses in frontend
 app.use('/api', (req, res) => {

@@ -44,7 +44,13 @@ export default function Login({ setUser }) {
     } catch (err) {
       console.error('Login error:', err);
       console.error('Error response:', err.response?.data);
-      setError(err.response?.data?.message || "Login failed");
+      
+      // Handle frozen account specifically
+      if (err.response?.data?.frozen) {
+        setError("Your account has been frozen by an administrator. Please contact support for assistance.");
+      } else {
+        setError(err.response?.data?.message || "Login failed");
+      }
     }
   };
 
