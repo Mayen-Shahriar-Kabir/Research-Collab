@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 import './ProfileManager.css';
 
 const ProfileManager = ({ userId }) => {
@@ -44,6 +46,8 @@ const ProfileManager = ({ userId }) => {
     }
   }, [userId]);
 
+  const { authToken } = useAuth();
+  
   const fetchProfile = async () => {
     try {
       console.log('Fetching profile for userId:', userId);
@@ -54,14 +58,22 @@ const ProfileManager = ({ userId }) => {
         return;
       }
       
-      const url = `http://localhost:5001/api/profile/${userId}`;
+      const url = `${API_BASE_URL}/auth/profile/${userId}`;
       console.log('Making request to URL:', url);
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add auth token if available
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: headers,
+        credentials: 'include' // Important for cookies if using them
       });
       
       if (response.ok) {
@@ -154,15 +166,28 @@ const ProfileManager = ({ userId }) => {
     }
     
     try {
-      const url = `http://localhost:5001/api/profile/${userId}`;
+      const url = `${API_BASE_URL}/auth/profile/${userId}`;
+      
+      // Prepare headers with auth token
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+      
+      console.log('Saving profile to:', url);
+      console.log('Request payload:', profile.profile);
       
       const response = await fetch(url, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
+        credentials: 'include',
         body: JSON.stringify(profile.profile),
       });
+      
+      console.log('Save response status:', response.status);
       
       if (response.ok) {
         const updatedProfile = await response.json();
@@ -177,7 +202,7 @@ const ProfileManager = ({ userId }) => {
         alert('Profile updated successfully!');
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        alert('Failed to update profile: ' + errorData.message);
+        alert('Failed to update profile: ' + (errorData.message || 'Please check your input and try again'));
       }
     } catch (error) {
       console.error('Network error:', error);

@@ -71,9 +71,6 @@ app.use((req, res, next) => {
 // Optional auth middleware (sets req.user if Authorization: Bearer <token> present)
 app.use(optionalAuth);
 
-// Routes
-app.use("/api", authRoutes);  // This includes /api/profile routes
-
 // Apply frozen status check to all protected routes
 app.use("/api/projects", checkFrozenStatus, projectRoutes);
 app.use("/api/applications", checkFrozenStatus, applicationRoutes);
@@ -86,8 +83,11 @@ app.use("/api/lab-access", checkFrozenStatus, labAccessRoutes);
 app.use("/api/timeline-extensions", checkFrozenStatus, timelineExtensionRoutes);
 app.use("/api/computers", checkFrozenStatus, computerRoutes);
 app.use("/api/pc-requests", checkFrozenStatus, pcRequestRoutes);
-app.use("/api/admin", adminRoutes);
 app.use("/api/matching", checkFrozenStatus, matchingRoutes);
+
+// Public routes (no frozen status check)
+app.use('/api/auth', authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Return JSON for unmatched API routes to avoid HTML responses in frontend
 app.use('/api', (req, res) => {

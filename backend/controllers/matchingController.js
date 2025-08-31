@@ -29,8 +29,17 @@ const findCommonInterests = (studentInterests, facultyInterests) => {
 // Get faculty-student matching suggestions
 export const getFacultyStudentMatches = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { userId } = req.params;
     const { role } = req.query;
+    
+    // Users can only get matches for themselves unless they're admin
+    if (req.user.role !== 'admin' && req.user.id !== userId) {
+      return res.status(403).json({ message: 'Access denied - you can only view your own matches' });
+    }
     
     // Validate user exists
     const user = await User.findById(userId);
@@ -146,7 +155,16 @@ export const getFacultyStudentMatches = async (req, res) => {
 // Get detailed match analysis
 export const getMatchAnalysis = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { userId, targetId } = req.params;
+    
+    // Users can only get analysis for themselves unless they're admin
+    if (req.user.role !== 'admin' && req.user.id !== userId) {
+      return res.status(403).json({ message: 'Access denied - you can only view your own match analysis' });
+    }
     
     const user = await User.findById(userId);
     const target = await User.findById(targetId);

@@ -43,8 +43,7 @@ const taskSchema = new mongoose.Schema({
   },
   updates: [updateSchema]
 }, { 
-  timestamps: true, 
-  collection: 'Tasks' 
+  timestamps: true
 });
 
 // Index for faster querying
@@ -52,4 +51,4 @@ taskSchema.index({ project: 1 });
 taskSchema.index({ assignedTo: 1 });
 taskSchema.index({ status: 1 });
 
-export default mongoose.model('Task', taskSchema);
+export default mongoose.model('Task', taskSchema, 'Tasks');

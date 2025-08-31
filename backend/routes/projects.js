@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Project from '../models/Project.js';
 import User from '../models/model.js';
 import { 
@@ -19,11 +20,42 @@ const router = express.Router();
 // Get all projects with faculty and students populated
 router.get('/', async (req, res) => {
   try {
-    const projects = await Project.find()
-      .populate({ path: 'faculty', select: 'email name role profile profilePhoto' })
-      .populate({ path: 'currentStudents', select: 'email name role profile profilePhoto' })
-      .sort({ createdAt: -1 });
-    res.json(projects);
+    const { facultyId } = req.query;
+    const query = {};
+    
+    // Only filter by facultyId if provided (for faculty viewing their own projects)
+    if (facultyId) {
+      try {
+        const objectId = new mongoose.Types.ObjectId(facultyId);
+        query.faculty = objectId;
+      } catch (err) {
+        query.faculty = facultyId;
+      }
+    }
+    
+    // Find projects with the query
+    const projects = await Project.find(query)
+      .populate({
+        path: 'faculty',
+        select: 'email name role profile profilePhoto'
+      })
+      .populate({ 
+        path: 'currentStudents', 
+        select: 'email name role profile profilePhoto' 
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+      
+    // Filter out projects where faculty is null if we're filtering by facultyId
+    const filteredProjects = facultyId 
+      ? projects.filter(p => p.faculty !== null && p.faculty !== undefined)
+      : projects;
+      
+    res.json({
+      success: true,
+      count: filteredProjects.length,
+      data: filteredProjects
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });

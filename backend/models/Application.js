@@ -7,8 +7,8 @@ const applicationSchema = new mongoose.Schema({
   cvUrl: { type: String, default: '' },
   sampleWorkUrl: { type: String, default: '' },
   status: { type: String, enum: ['pending', 'shortlisted', 'accepted', 'rejected'], default: 'pending' }
-}, { timestamps: true, collection: 'Applications' });
+}, { timestamps: true });
 
 applicationSchema.index({ student: 1, project: 1 }, { unique: true });
 
-export default mongoose.model('Application', applicationSchema);
+export default mongoose.model('Application', applicationSchema, 'Application');

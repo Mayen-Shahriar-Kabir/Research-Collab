@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import React, { useEffect, useState } from "react";
+import React from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -14,62 +15,53 @@ import ProjectsPage from './pages/ProjectsPage';
 import TasksPage from './pages/TasksPage';
 import BookmarksPage from './pages/BookmarksPage';
 import NotificationsPage from './pages/NotificationsPage';
-import ProjectManagement from './components/ProjectManagement';
+import ProjectManagementPage from './pages/ProjectManagementPage';
 import Dashboard from './pages/Dashboard';
 import PcRequestsPage from './pages/PcRequestsPage';
 import AdminPcManagement from './pages/AdminPcManagement';
 import CertificatesPage from './pages/CertificatesPage';
+import MessagesPage from './pages/MessagesPage';
 import './App.css';
 
 function App() {
-  const [user, setUser] = useState(null); // store logged-in user
-
-  // Hydrate user from localStorage once on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('user');
-      if (stored) {
-        setUser(JSON.parse(stored));
-      }
-    } catch (e) {
-      // ignore
-    }
-  }, []);
-
-  // Debug user state
-  console.log('App user state:', user);
-  console.log('User ID for profile:', user?.id);
+  // We'll let individual components use useAuth() as needed
+  // This prevents the "useAuth must be used within an AuthProvider" error
 
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Navbar user={user} setUser={setUser} />
+    <AuthProvider>
+      <Router future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}>
+        <Navbar />
         <div className="pages">
           <Routes>
             <Route path='/' element={<Navigate to="/login" />} />
-            <Route path='/home' element={<Home user={user} />} />
-            <Route path='/login' element={<Login setUser={setUser} />} />
+            <Route path='/home' element={<Home />} />
+            <Route path='/login' element={<Login />} />
             <Route path='/register' element={<Register />} />
-            <Route path='/user' element={<User user={user} />} />
-            <Route path='/profile' element={<ProfilePage userId={user?.id || user?._id} user={user} />} />
-            <Route path='/admin/users' element={<AdminUsers user={user} />} />
-            <Route path='/role-request' element={<RoleRequest user={user} setUser={setUser} />} />
-            <Route path='/projects/new' element={<NewProject user={user} />} />
-            <Route path='/applications-review' element={<ApplicationsReview user={user} />} />
-            <Route path='/projects' element={<ProjectsPage userRole={user?.role} userId={user?.id} />} />
-            <Route path='/tasks' element={<TasksPage userId={user?.id || user?._id} userRole={user?.role} />} />
-            <Route path='/tasks/:taskId' element={<TasksPage userId={user?.id || user?._id} userRole={user?.role} />} />
-            <Route path='/bookmarks' element={<BookmarksPage userId={user?.id} />} />
-            <Route path='/notifications' element={<NotificationsPage userId={user?.id} />} />
-            <Route path='/project-management' element={<ProjectManagement user={user} />} />
-            <Route path='/dashboard' element={<Dashboard userId={user?.id || user?._id} userRole={user?.role} />} />
-            <Route path='/pc-requests' element={<PcRequestsPage user={user} />} />
-            <Route path='/admin/pc' element={<AdminPcManagement user={user} />} />
-            <Route path='/certificates' element={<CertificatesPage userId={user?.id || user?._id} />} />
+            <Route path='/user' element={<User />} />
+            <Route path='/profile' element={<ProfilePage />} />
+            <Route path='/admin/users' element={<AdminUsers />} />
+            <Route path='/role-request' element={<RoleRequest />} />
+            <Route path='/projects/new' element={<NewProject />} />
+            <Route path='/applications-review' element={<ApplicationsReview />} />
+            <Route path='/projects' element={<ProjectsPage />} />
+            <Route path='/tasks' element={<TasksPage />} />
+            <Route path='/tasks/:taskId' element={<TasksPage />} />
+            <Route path='/bookmarks' element={<BookmarksPage />} />
+            <Route path='/notifications' element={<NotificationsPage />} />
+            <Route path='/project-management' element={<ProjectManagementPage />} />
+            <Route path='/dashboard' element={<Dashboard />} />
+            <Route path='/pc-requests' element={<PcRequestsPage />} />
+            <Route path='/admin/pc' element={<AdminPcManagement />} />
+            <Route path='/admin/users' element={<AdminUsers />} />
+            <Route path='/certificates' element={<CertificatesPage />} />
+            <Route path='/messages' element={<MessagesPage />} />
           </Routes>
         </div>
-      </BrowserRouter>
-    </div>
+      </Router>
+    </AuthProvider>
   );
 }
 

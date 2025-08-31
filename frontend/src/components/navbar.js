@@ -1,8 +1,11 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import NotificationBadge from './NotificationBadge';
 import './Navbar.css';
 
-export default function Navbar({ user, setUser }) {
+export default function Navbar() {
+  const { currentUser: user, logout: authLogout } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
@@ -25,8 +28,18 @@ export default function Navbar({ user, setUser }) {
     const load = async () => {
       const uid = user._id || user.id;
       try {
-        const res = await fetch(`${API_BASE}/api/notifications?userId=${encodeURIComponent(uid)}`);
-        const data = await res.json().catch(() => []);
+        const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001').replace(/\/$/, '');
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/notifications?userId=${encodeURIComponent(uid)}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!res.ok) throw new Error('Failed to fetch notifications');
+        
+        const data = await res.json();
         if (Array.isArray(data)) {
           const count = data.filter(n => !n.read).length;
           setUnread(count);
@@ -46,14 +59,10 @@ export default function Navbar({ user, setUser }) {
 
   const handleLogout = (e) => {
     e?.preventDefault();
-    try {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    } catch (e) {
-      console.error('Error clearing auth data:', e);
+    const success = authLogout();
+    if (success) {
+      navigate('/login');
     }
-    setUser?.(null);
-    navigate('/login');
   };
 
   const linkClass = (path) =>
@@ -79,19 +88,30 @@ export default function Navbar({ user, setUser }) {
                   <span className="label">Home</span>
                 </Link>
               </li>
+              {user.role !== 'admin' && (
+                <li>
+                  <Link className={linkClass("/projects")} to="/projects" aria-label="Projects">
+                    <i className="nav-icon">📁</i>
+                    <span className="label">Projects</span>
+                  </Link>
+                </li>
+              )}
+              {user.role !== 'admin' && (
+                <li>
+                  <Link className={linkClass("/tasks")} to="/tasks" aria-label="Tasks">
+                    <i className="nav-icon">✅</i>
+                    <span className="label">Tasks</span>
+                  </Link>
+                </li>
+              )}
               <li>
-                <Link className={linkClass("/projects")} to="/projects" aria-label="Projects">
-                  <i className="nav-icon">📁</i>
-                  <span className="label">Projects</span>
+                <Link className={linkClass("/messages")} to="/messages" aria-label="Messages">
+                  <i className="nav-icon">💬</i>
+                  <span className="label">Messages</span>
                 </Link>
               </li>
-              <li>
-                <Link className={linkClass("/tasks")} to="/tasks" aria-label="Tasks">
-                  <i className="nav-icon">✅</i>
-                  <span className="label">Tasks</span>
-                </Link>
-              </li>
-              {user.role === 'student' && (
+              {/* Dashboard - Available to non-admin users */}
+              {user.role !== 'admin' && (
                 <li>
                   <Link className={linkClass("/dashboard")} to="/dashboard" aria-label="Dashboard">
                     <i className="nav-icon">📊</i>
@@ -99,14 +119,7 @@ export default function Navbar({ user, setUser }) {
                   </Link>
                 </li>
               )}
-              {user.role === 'student' && (
-                <li>
-                  <Link className={linkClass("/pc-requests")} to="/pc-requests" aria-label="PC Requests">
-                    <i className="nav-icon">🖥️</i>
-                    <span className="label">PC Requests</span>
-                  </Link>
-                </li>
-              )}
+              
               {user.role === 'faculty' && (
                 <li>
                   <Link className={linkClass("/project-management")} to="/project-management" aria-label="Manage Projects">
@@ -116,12 +129,20 @@ export default function Navbar({ user, setUser }) {
                 </li>
               )}
               {user.role === 'admin' && (
-                <li>
-                  <Link className={linkClass("/admin/pc")} to="/admin/pc" aria-label="PC Management">
-                    <i className="nav-icon">🖥️</i>
-                    <span className="label">PC Management</span>
-                  </Link>
-                </li>
+                <>
+                  <li>
+                    <Link className={linkClass("/admin/pc")} to="/admin/pc" aria-label="PC Management">
+                      <i className="nav-icon">🖥️</i>
+                      <span className="label">PC Management</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className={linkClass("/admin/users")} to="/admin/users" aria-label="Manage Users">
+                      <i className="nav-icon">👥</i>
+                      <span className="label">Manage Users</span>
+                    </Link>
+                  </li>
+                </>
               )}
             </ul>
           )}
@@ -132,26 +153,21 @@ export default function Navbar({ user, setUser }) {
           <ul className="nav-links">
             {user ? (
               <>
-                <li>
-                  <Link className={linkClass("/bookmarks")} to="/bookmarks" aria-label="Bookmarks">
-                    <i className="nav-icon">🔖</i>
-                    <span className="label">Bookmarks</span>
-                  </Link>
-                </li>
+                {user.role !== 'admin' && (
+                  <li>
+                    <Link className={linkClass("/bookmarks")} to="/bookmarks" aria-label="Bookmarks">
+                      <i className="nav-icon">🔖</i>
+                      <span className="label">Bookmarks</span>
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link className={linkClass("/profile")} to="/profile" aria-label="Profile">
                     <i className="nav-icon">👤</i>
                     <span className="label">Profile</span>
                   </Link>
                 </li>
-                {user.role === 'admin' ? (
-                  <li>
-                    <Link className={linkClass("/admin/users")} to="/admin/users" aria-label="Admin">
-                      <i className="nav-icon">👥</i>
-                      <span className="label">Admin</span>
-                    </Link>
-                  </li>
-                ) : (
+                {user.role !== 'admin' && !user.roleRequest && (
                   <li>
                     <Link className={linkClass("/role-request")} to="/role-request" aria-label="Request Role">
                       <i className="nav-icon">📝</i>
@@ -161,11 +177,11 @@ export default function Navbar({ user, setUser }) {
                 )}
                 <li>
                   <Link className={linkClass("/notifications")} to="/notifications" aria-label="Notifications">
-                    <i className="nav-icon">🔔</i>
-                    <span className="label">
-                      Notifications
-                      {unread > 0 && <span className="notification-badge">{unread}</span>}
-                    </span>
+                    <div className="nav-link-with-badge">
+                      <i className="nav-icon">🔔</i>
+                      <span className="label">Notifications</span>
+                      <NotificationBadge />
+                    </div>
                   </Link>
                 </li>
                 <li>
@@ -202,9 +218,22 @@ export default function Navbar({ user, setUser }) {
         {/* Mobile Menu Toggle */}
         <button 
           className="mobile-toggle" 
-          onClick={() => {
-            const container = document.querySelector('.navbar-container');
-            if (container) container.classList.toggle('mobile-open');
+          onClick={(e) => {
+            e.preventDefault();
+            const container = e.target.closest('.navbar-container');
+            if (container) {
+              container.classList.toggle('mobile-open');
+              // Close menu when clicking outside
+              if (container.classList.contains('mobile-open')) {
+                const handleClickOutside = (event) => {
+                  if (!container.contains(event.target)) {
+                    container.classList.remove('mobile-open');
+                    document.removeEventListener('click', handleClickOutside);
+                  }
+                };
+                setTimeout(() => document.addEventListener('click', handleClickOutside), 100);
+              }
+            }
           }}
           aria-label="Toggle navigation"
         >

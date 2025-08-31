@@ -1,21 +1,22 @@
 import express from 'express';
-import { createPcRequest, listMyPcRequests, listPcRequests, approvePcRequest, rejectPcRequest } from '../controllers/controller.js';
+import { createPcRequest, listMyPcRequests, listPcRequests, approvePcRequest, rejectPcRequest, allocatePcToUser } from '../controllers/controller.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Student: create a PC request
-router.post('/', createPcRequest);
+router.post('/', authenticateToken, createPcRequest);
 
-// Student: list own pc requests (?studentId=...)
-router.get('/mine', listMyPcRequests);
+// Student: list own pc requests
+router.get('/mine', authenticateToken, listMyPcRequests);
 
-// Admin: list all pc requests (?adminId=...&status=pending|approved|rejected)
-router.get('/', listPcRequests);
+// Admin: list all pc requests
+router.get('/', authenticateToken, listPcRequests);
 
 // Admin: approve a request with allocation
-router.put('/:requestId/approve', approvePcRequest);
+router.put('/:requestId/approve', authenticateToken, approvePcRequest);
 
 // Admin: reject a request
-router.put('/:requestId/reject', rejectPcRequest);
+router.put('/:requestId/reject', authenticateToken, rejectPcRequest);
 
 export default router;

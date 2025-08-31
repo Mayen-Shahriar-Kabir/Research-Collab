@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css';
 import MatchingSuggestions from '../components/MatchingSuggestions';
+import ProjectManagement from '../components/ProjectManagement';
+import { useAuth } from '../context/AuthContext';
 
 const Dashboard = ({ userId, userRole }) => {
+  const { currentUser } = useAuth();
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     fetchDashboardData();
@@ -17,14 +21,17 @@ const Dashboard = ({ userId, userRole }) => {
     try {
       const token = localStorage.getItem('token');
       
-      // Get userId from props or localStorage
-      let currentUserId = userId;
-      if (!currentUserId) {
+      // Get userId and role from currentUser, props, or localStorage
+      let currentUserId = currentUser?.id || userId;
+      let currentUserRole = currentUser?.role || userRole;
+      
+      if (!currentUserId || !currentUserRole) {
         try {
           const storedUser = localStorage.getItem('user');
           if (storedUser) {
             const parsedUser = JSON.parse(storedUser);
-            currentUserId = parsedUser.id || parsedUser._id;
+            currentUserId = currentUserId || parsedUser.id || parsedUser._id;
+            currentUserRole = currentUserRole || parsedUser.role;
           }
         } catch (e) {
           console.error('Error parsing stored user:', e);
@@ -32,6 +39,7 @@ const Dashboard = ({ userId, userRole }) => {
       }
       
       console.log('Dashboard userId:', currentUserId);
+      console.log('Dashboard userRole:', currentUserRole);
       console.log('Token exists:', !!token);
       
       if (!currentUserId) {
@@ -39,7 +47,7 @@ const Dashboard = ({ userId, userRole }) => {
       }
       
       // Fetch user profile
-      const userResponse = await fetch(`http://localhost:5001/api/profile/${currentUserId}`, {
+      const userResponse = await fetch(`http://localhost:5001/api/auth/profile/${currentUserId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -48,31 +56,41 @@ const Dashboard = ({ userId, userRole }) => {
       }
       
       const userData = await userResponse.json();
-      setUser(userData.profile);
+      const userProfile = userData.profile;
+      setUser(userProfile);
 
-      // Fetch user's projects
-      const projectsResponse = await fetch(`http://localhost:5001/api/projects/user/${currentUserId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (!projectsResponse.ok) {
-        throw new Error(`Projects API failed: ${projectsResponse.status}`);
-      }
-      
-      const projectsData = await projectsResponse.json();
-      setProjects(projectsData.projects || []);
+      // Fetch data based on user role
+      if (currentUserRole === 'faculty' || userProfile.role === 'faculty') {
+        // For faculty, fetch their projects
+        const projectsResponse = await fetch(`http://localhost:5001/api/projects?facultyId=${currentUserId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (projectsResponse.ok) {
+          const projectsData = await projectsResponse.json();
+          setProjects(Array.isArray(projectsData) ? projectsData : []);
+        }
+      } else {
+        // For students, fetch their projects and tasks
+        const projectsResponse = await fetch(`http://localhost:5001/api/projects/user/${currentUserId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (projectsResponse.ok) {
+          const projectsData = await projectsResponse.json();
+          setProjects(projectsData.projects || []);
+        }
 
-      // Fetch user's tasks
-      const tasksResponse = await fetch(`http://localhost:5001/api/tasks/student/${currentUserId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (!tasksResponse.ok) {
-        throw new Error(`Tasks API failed: ${tasksResponse.status}`);
+        // Fetch student's tasks
+        const tasksResponse = await fetch(`http://localhost:5001/api/tasks/student/${currentUserId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (tasksResponse.ok) {
+          const tasksData = await tasksResponse.json();
+          setTasks(tasksData.tasks || []);
+        }
       }
-      
-      const tasksData = await tasksResponse.json();
-      setTasks(tasksData.tasks || []);
 
       setLoading(false);
     } catch (err) {
@@ -105,7 +123,92 @@ const Dashboard = ({ userId, userRole }) => {
   if (error) return <div className="dashboard-error">{error}</div>;
 
   const taskCounts = getTaskStatusCounts();
+  const currentUserRole = user?.role || currentUser?.role || userRole || 'student';
+  const isFaculty = currentUserRole === 'faculty';
 
+  // Faculty Dashboard
+  if (isFaculty) {
+    return (
+      <div className="dashboard">
+        <div className="dashboard-header">
+          <h1>Faculty Dashboard</h1>
+          <p>Welcome back, {user?.name}!</p>
+        </div>
+
+        <div className="faculty-dashboard-tabs">
+          <button 
+            className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Overview
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'projects' ? 'active' : ''}`}
+            onClick={() => setActiveTab('projects')}
+          >
+            Manage Projects
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'matching' ? 'active' : ''}`}
+            onClick={() => setActiveTab('matching')}
+          >
+            Find Students
+          </button>
+        </div>
+
+        <div className="faculty-dashboard-content">
+          {activeTab === 'overview' && (
+            <div className="faculty-overview">
+              <div className="dashboard-grid">
+                <div className="dashboard-card">
+                  <h3>My Projects</h3>
+                  <div className="stat-number">{projects.length}</div>
+                  <p>Active research projects</p>
+                </div>
+                <div className="dashboard-card">
+                  <h3>Total Students</h3>
+                  <div className="stat-number">
+                    {projects.reduce((total, project) => total + (project.currentStudents || 0), 0)}
+                  </div>
+                  <p>Students across all projects</p>
+                </div>
+                <div className="dashboard-card">
+                  <h3>Recent Projects</h3>
+                  {projects.length === 0 ? (
+                    <p>No projects created yet</p>
+                  ) : (
+                    <div className="recent-projects">
+                      {projects.slice(0, 3).map(project => (
+                        <div key={project._id} className="project-summary">
+                          <h5>{project.title}</h5>
+                          <span className="project-domain">{project.domain}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'projects' && (
+            <ProjectManagement user={user} />
+          )}
+          
+          {activeTab === 'matching' && (
+            <div className="matching-section">
+              <MatchingSuggestions 
+                userId={user?.id || user?._id} 
+                userRole="faculty" 
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Student Dashboard
   return (
     <div className="dashboard">
       <div className="dashboard-header">
@@ -221,8 +324,8 @@ const Dashboard = ({ userId, userRole }) => {
         {/* Faculty Matching Suggestions Card */}
         <div className="dashboard-card matching-suggestions-card">
           <MatchingSuggestions 
-            userId={userId || (user && (user.id || user._id))} 
-            userRole={userRole || user?.role || 'student'} 
+            userId={currentUser?.id || userId || (user && (user.id || user._id))} 
+            userRole={currentUser?.role || userRole || user?.role || 'student'} 
           />
         </div>
       </div>

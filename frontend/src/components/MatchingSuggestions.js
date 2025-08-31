@@ -1,23 +1,67 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import './MatchingSuggestions.css';
 
+// Normalize API base URL
+const API_BASE = ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
+  .replace(/\/$/, '')
+  .replace(/\/api$/, ''));
+
 const MatchingSuggestions = ({ userId, userRole }) => {
+  const { currentUser } = useAuth();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedMatch, setSelectedMatch] = useState(null);
 
   useEffect(() => {
-    if (userId) {
-      fetchMatches();
+    // Use currentUser from AuthContext as fallback
+    const effectiveUserId = userId || currentUser?.id;
+    const effectiveUserRole = userRole || currentUser?.role;
+    
+    console.log('MatchingSuggestions useEffect - effectiveUserId:', effectiveUserId, 'effectiveUserRole:', effectiveUserRole);
+    
+    if (effectiveUserId && effectiveUserRole) {
+      fetchMatches(effectiveUserId, effectiveUserRole);
+    } else {
+      console.log('Missing user data - waiting for auth context');
+      setLoading(false);
+      setError('Please log in to view matching suggestions.');
     }
-  }, [userId]);
+  }, [userId, userRole, currentUser]);
 
-  const fetchMatches = async () => {
+  const fetchMatches = async (effectiveUserId, effectiveUserRole) => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5001/api/matching/suggestions/${userId}?role=${userRole}`);
+      setError('');
+      
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError('Authentication required');
+        setLoading(false);
+        return;
+      }
+
+      const targetUserId = effectiveUserId || userId;
+      const targetUserRole = effectiveUserRole || userRole;
+
+      console.log('Fetching matches from:', `${API_BASE}/api/matching/suggestions/${targetUserId}?role=${targetUserRole}`);
+      console.log('Token exists:', !!token);
+      console.log('TargetUserId:', targetUserId, 'TargetUserRole:', targetUserRole);
+      
+      const response = await fetch(`${API_BASE}/api/matching/suggestions/${targetUserId}?role=${targetUserRole}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
       const data = await response.json();
+      console.log('Response data:', data);
       
       if (response.ok) {
         setMatches(data.matches || []);
@@ -25,11 +69,12 @@ const MatchingSuggestions = ({ userId, userRole }) => {
           setError(data.message);
         }
       } else {
-        setError(data.message || 'Failed to fetch matches');
+        console.error('API Error:', data);
+        setError(data.message || `Failed to fetch matches (${response.status})`);
       }
     } catch (err) {
-      setError('Network error fetching matches');
       console.error('Error fetching matches:', err);
+      setError(`Network error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -42,7 +87,10 @@ const MatchingSuggestions = ({ userId, userRole }) => {
   if (loading) {
     return (
       <div className="matching-suggestions">
-        <div className="loading">Loading matching suggestions...</div>
+        <div className="loading">
+          <div className="spinner"></div>
+          <p>Loading matching suggestions...</p>
+        </div>
       </div>
     );
   }
@@ -83,7 +131,7 @@ const MatchingSuggestions = ({ userId, userRole }) => {
                   <div className="profile-info">
                     {person.profilePhoto ? (
                       <img 
-                        src={`http://localhost:5001${person.profilePhoto}`} 
+                        src={`${API_BASE}${person.profilePhoto}`} 
                         alt={person.name}
                         className="profile-photo"
                       />

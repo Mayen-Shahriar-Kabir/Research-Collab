@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import './PcRequestsPage.css';
 
-export default function PcRequestsPage({ user }) {
+export default function PcRequestsPage() {
+  const { currentUser: user } = useAuth();
   const API_BASE = useMemo(() => ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
     .replace(/\/$/, '')
     .replace(/\/api$/, '')), []);
@@ -14,29 +16,72 @@ export default function PcRequestsPage({ user }) {
   const [computers, setComputers] = useState([]);
 
   const loadMyRequests = async () => {
-    if (!user?._id && !user?.id) return;
+    if (!user?.id) return;
     try {
-      const uid = user._id || user.id;
-      const res = await fetch(`${API_BASE}/api/pc-requests/mine?studentId=${encodeURIComponent(uid)}`);
-      const data = await res.json();
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('Authentication token not found');
+        return;
+      }
+      
+      const response = await fetch(`${API_BASE}/api/pc-requests/mine`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load PC requests: ${response.statusText}`);
+      }
+
+      const data = await response.json();
       setRequests(Array.isArray(data) ? data : (Array.isArray(data?.requests) ? data.requests : []));
-    } catch (e) {
-      // ignore
+    } catch (error) {
+      console.error('Error loading PC requests:', error);
+      setError(error.message || 'Failed to load PC requests');
     }
   };
 
   const loadComputers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/computers?status=active`);
-      const data = await res.json();
-      let list = Array.isArray(data) ? data : (Array.isArray(data?.computers) ? data.computers : []);
-      if (!list.length) {
-        const resAll = await fetch(`${API_BASE}/api/computers`);
-        const dataAll = await resAll.json();
-        list = Array.isArray(dataAll) ? dataAll : (Array.isArray(dataAll?.computers) ? dataAll.computers : []);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('Authentication token not found');
+        return;
       }
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      // First try to get active computers
+      const activeResponse = await fetch(`${API_BASE}/api/computers?status=active`, { headers });
+      let list = [];
+      
+      if (activeResponse.ok) {
+        const data = await activeResponse.json();
+        list = Array.isArray(data) ? data : (Array.isArray(data?.computers) ? data.computers : []);
+      } else if (activeResponse.status !== 404) {
+        throw new Error(`Failed to load computers: ${activeResponse.statusText}`);
+      }
+      
+      // If no active computers or error, try getting all computers
+      if (!list.length) {
+        const allResponse = await fetch(`${API_BASE}/api/computers`, { headers });
+        if (!allResponse.ok) {
+          throw new Error(`Failed to load computers: ${allResponse.statusText}`);
+        }
+        const data = await allResponse.json();
+        list = Array.isArray(data) ? data : (Array.isArray(data?.computers) ? data.computers : []);
+      }
+      
       setComputers(list);
-    } catch (e) { /* ignore */ }
+    } catch (error) {
+      console.error('Error loading computers:', error);
+      setError(error.message || 'Failed to load computers. Please try again later.');
+    }
   };
 
   useEffect(() => {
@@ -50,34 +95,55 @@ export default function PcRequestsPage({ user }) {
     setError('');
     setMessage('');
     setLoading(true);
+    
     try {
-      const uid = user?._id || user?.id;
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
       const payload = {
-        studentId: uid,
         desiredStart: form.desiredStart ? new Date(form.desiredStart).toISOString() : '',
         desiredEnd: form.desiredEnd ? new Date(form.desiredEnd).toISOString() : '',
         purpose: form.purpose,
       };
+      
       if (form.preferredComputer) payload.preferredComputer = form.preferredComputer;
 
-      const res = await fetch(`${API_BASE}/api/pc-requests`, {
+      const response = await fetch(`${API_BASE}/api/pc-requests`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(payload)
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message || 'Request failed');
-      setMessage('PC request submitted');
+
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(responseData?.message || 'Failed to submit PC request');
+      }
+      
+      setMessage('PC request submitted successfully');
       setForm({ desiredStart: '', desiredEnd: '', purpose: '', preferredComputer: '' });
-      loadMyRequests();
-    } catch (err) {
-      setError('Network error');
+      
+      // Refresh the requests list
+      await loadMyRequests();
+      
+    } catch (error) {
+      console.error('Error submitting PC request:', error);
+      setError(error.message || 'Failed to submit PC request. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!user || user.role !== 'student') {
+  if (!user) {
+    return <div className="pcm-container"><div className="pcm-note">Please log in to request a PC.</div></div>;
+  }
+  
+  if (user.role !== 'student') {
     return <div className="pcm-container"><div className="pcm-note">Only students can request PCs.</div></div>;
   }
 

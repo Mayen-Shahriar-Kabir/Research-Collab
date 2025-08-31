@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import './MessagingSystem.css';
+import { API_BASE_URL } from '../config';
+
+// Normalize API base URL
+const API_BASE = API_BASE_URL.replace('/api', '');
 
 const MessagingSystem = ({ userId, userRole }) => {
   const [messages, setMessages] = useState([]);
@@ -14,78 +19,161 @@ const MessagingSystem = ({ userId, userRole }) => {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
-  useEffect(() => {
-    fetchMessages();
-    fetchUsers();
-  }, [userId]);
+  const { authToken, currentUser } = useAuth();
 
-  const fetchMessages = async () => {
+  useEffect(() => {
+    console.log('MessagingSystem - userId:', userId, 'authToken:', !!authToken, 'currentUser:', currentUser);
+    if (userId && authToken) {
+      fetchMessages();
+      fetchUsers();
+    } else {
+      setLoading(false);
+    }
+  }, [userId, authToken]);
+
+  const fetchMessages = useCallback(async () => {
+    if (!userId || !authToken) {
+      console.log('fetchMessages: Missing userId or authToken', { userId, authToken: !!authToken });
+      setLoading(false);
+      return;
+    }
+    
+    setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5001/api/messages?userId=${userId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data);
-        organizeConversations(data);
+      console.log('Fetching messages for userId:', userId);
+      console.log('Using authToken:', authToken.substring(0, 10) + '...');
+      const response = await fetch(`${API_BASE}/api/messages`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Messages response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Messages fetch error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const data = await response.json();
+      console.log('Fetched messages count:', data.length);
+      console.log('Fetched messages data:', data);
+      setMessages(data);
+      organizeConversations(data);
     } catch (error) {
       console.error('Error fetching messages:', error);
+      // Only show alert if this is the initial load, not a refresh after sending
+      if (loading) {
+        alert('Failed to load messages. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId, authToken]);
 
-  // search users by name/email for starting a chat
+  // Search users by name/email for starting a chat
   useEffect(() => {
-    if (!showNewChat) return;
-    const handle = setTimeout(async () => {
+    if (!showNewChat || !authToken || !userId) return;
+    
+    const searchUsers = async () => {
       setSearching(true);
       try {
-        const params = new URLSearchParams({ requesterId: userId, query: searchQuery || '' });
-        const res = await fetch(`http://localhost:5001/api/messages/search?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSearchResults(data || []);
+        const params = new URLSearchParams({ 
+          query: searchQuery || '' 
+        });
+        
+        console.log('Searching users with query:', searchQuery);
+        const res = await fetch(`${API_BASE}/api/messages/search?${params.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        console.log('Search response status:', res.status);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('Search error response:', errorText);
+          throw new Error(`HTTP error! status: ${res.status}`);
         }
-      } catch (e) {
-        console.error('Search error', e);
+        
+        const data = await res.json();
+        console.log('Search results:', data);
+        // Transform search results to use consistent ID format
+        const transformedResults = (data || []).map(user => ({
+          ...user,
+          _id: user._id || user.id
+        }));
+        setSearchResults(transformedResults);
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
       } finally {
         setSearching(false);
       }
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [searchQuery, showNewChat, userId]);
+    };
+    
+    const delayDebounce = setTimeout(searchUsers, 300);
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery, showNewChat, userId, authToken]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
+    if (!userId || !authToken) return;
+    
     try {
-      // This would need a users endpoint in your backend
-      // For now, we'll use the messages to get user info
-      const response = await fetch(`http://localhost:5001/api/messages?userId=${userId}`);
-      if (response.ok) {
-        const data = await response.json();
+      // Skip the contacts endpoint since it doesn't exist, go straight to messages
+      const messagesResponse = await fetch(`${API_BASE}/api/messages`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (messagesResponse.ok) {
+        const messagesData = await messagesResponse.json();
         const uniqueUsers = new Map();
         
-        data.forEach(msg => {
-          if (msg.sender._id !== userId && !uniqueUsers.has(msg.sender._id)) {
-            uniqueUsers.set(msg.sender._id, msg.sender);
+        messagesData.forEach(msg => {
+          if (msg.sender?._id !== userId && !uniqueUsers.has(msg.sender?._id)) {
+            uniqueUsers.set(msg.sender?._id, msg.sender);
           }
-          if (msg.recipient._id !== userId && !uniqueUsers.has(msg.recipient._id)) {
-            uniqueUsers.set(msg.recipient._id, msg.recipient);
+          if (msg.recipient?._id !== userId && !uniqueUsers.has(msg.recipient?._id)) {
+            uniqueUsers.set(msg.recipient?._id, msg.recipient);
           }
         });
         
         setUsers(Array.from(uniqueUsers.values()));
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error fetching users from messages:', error);
+      setUsers([]);
     }
-  };
+  }, [userId, authToken]);
 
   const organizeConversations = (messageList) => {
+    console.log('Organizing conversations from messageList:', messageList);
     const convMap = new Map();
     
     messageList.forEach(msg => {
-      const otherUserId = msg.sender._id === userId ? msg.recipient._id : msg.sender._id;
-      const otherUser = msg.sender._id === userId ? msg.recipient : msg.sender;
+      const otherUserId = msg.sender?._id === userId ? msg.recipient?._id : msg.sender?._id;
+      const otherUser = msg.sender?._id === userId ? msg.recipient : msg.sender;
+      
+      console.log('Processing message:', {
+        msgId: msg._id,
+        sender: msg.sender?._id,
+        recipient: msg.recipient?._id,
+        currentUserId: userId,
+        otherUserId,
+        otherUser: otherUser?.name || otherUser?.email
+      });
+      
+      if (!otherUserId || !otherUser) {
+        console.log('Skipping invalid message:', msg);
+        return; // Skip invalid messages
+      }
       
       if (!convMap.has(otherUserId)) {
         convMap.set(otherUserId, {
@@ -95,6 +183,7 @@ const MessagingSystem = ({ userId, userRole }) => {
           lastMessage: null,
           unreadCount: 0
         });
+        console.log('Created new conversation for user:', otherUserId);
       }
       
       const conv = convMap.get(otherUserId);
@@ -104,9 +193,15 @@ const MessagingSystem = ({ userId, userRole }) => {
         conv.lastMessage = msg;
       }
       
-      if (!msg.isRead && msg.recipient._id === userId) {
+      if (!msg.isRead && msg.recipient?._id === userId) {
         conv.unreadCount++;
       }
+    });
+    
+    // Sort messages within each conversation chronologically
+    convMap.forEach((conv, userId) => {
+      conv.messages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      console.log(`Conversation with ${userId} has ${conv.messages.length} messages`);
     });
     
     const sortedConversations = Array.from(convMap.values()).sort((a, b) => {
@@ -115,76 +210,161 @@ const MessagingSystem = ({ userId, userRole }) => {
       return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt);
     });
     
+    console.log('Final organized conversations:', sortedConversations);
     setConversations(sortedConversations);
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation) return;
+    if (!newMessage.trim() || !selectedConversation || !authToken) return;
+
+    const messageContent = newMessage.trim();
+    setNewMessage(''); // Clear input immediately for better UX
+    
+    // Optimistically update UI
+    const tempMessage = {
+      _id: `temp-${Date.now()}`,
+      sender: { _id: userId },
+      recipient: { _id: selectedConversation.userId },
+      content: messageContent,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+      isSending: true
+    };
+    
+    // Update local state optimistically
+    setMessages(prev => [...prev, tempMessage]);
+    setSelectedConversation(prev => ({
+      ...prev,
+      messages: [...prev.messages, tempMessage],
+      lastMessage: tempMessage
+    }));
 
     try {
-      const response = await fetch('http://localhost:5001/api/messages', {
+      const response = await fetch(`${API_BASE}/api/messages`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sender: userId,
           recipient: selectedConversation.userId,
-          content: newMessage.trim()
+          content: messageContent
         }),
       });
       
-      if (response.ok) {
-        const sentMessage = await response.json();
-        setMessages(prev => [sentMessage, ...prev]);
-        
-        // Update the selected conversation
-        setSelectedConversation(prev => ({
-          ...prev,
-          messages: [sentMessage, ...prev.messages],
-          lastMessage: sentMessage
-        }));
-        
-        setNewMessage('');
-        fetchMessages(); // Refresh to get updated conversations
-      } else {
-        const err = await response.json().catch(() => ({}));
-        alert(err.message || 'Failed to send message');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      
+      const sentMessage = await response.json();
+      console.log('Message sent successfully:', sentMessage);
+      
+      // Update with server response
+      setMessages(prev => [
+        ...prev.filter(m => m._id !== tempMessage._id),
+        sentMessage
+      ]);
+      
+      setSelectedConversation(prev => ({
+        ...prev,
+        messages: [
+          ...prev.messages.filter(m => m._id !== tempMessage._id),
+          sentMessage
+        ],
+        lastMessage: sentMessage
+      }));
+      
+      // Refresh conversations to update unread counts, etc.
+      try {
+        await fetchMessages();
+      } catch (refreshError) {
+        console.warn('Failed to refresh messages after sending:', refreshError);
+        // Don't show error to user since message was sent successfully
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Only show error if message actually failed to send
+      if (error.message.includes('HTTP error') || error.message.includes('Failed to start conversation')) {
+        alert('Failed to send message. Please try again.');
+        
+        // Remove optimistic message and show error
+        setMessages(prev => prev.filter(m => m._id !== tempMessage._id));
+        setSelectedConversation(prev => ({
+          ...prev,
+          messages: prev.messages.filter(m => m._id !== tempMessage._id),
+          lastMessage: prev.messages.filter(m => m._id !== tempMessage._id).slice(-1)[0] || null
+        }));
+      }
     }
   };
 
   const startNewConversation = async () => {
-    if (!selectedRecipient || !newMessage.trim()) return;
+    if (!selectedRecipient || !newMessage.trim() || !authToken) return;
 
+    const messageContent = newMessage.trim();
+    setNewMessage('');
+    
     try {
-      const response = await fetch('http://localhost:5001/api/messages', {
+      const response = await fetch(`${API_BASE}/api/messages`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sender: userId,
           recipient: selectedRecipient,
-          content: newMessage.trim()
+          content: messageContent
         }),
       });
       
-      if (response.ok) {
-        const sentMessage = await response.json();
-        setMessages(prev => [sentMessage, ...prev]);
-        setNewMessage('');
-        setSelectedRecipient('');
-        setShowNewChat(false);
-        fetchMessages();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to start conversation');
+      }
+      
+      const sentMessage = await response.json();
+      
+      // Update UI with the new message
+      setMessages(prev => [...prev, sentMessage]);
+      
+      // Reset new conversation state
+      setSelectedRecipient('');
+      setShowNewChat(false);
+      // Refresh messages to update conversations list
+      try {
+        await fetchMessages();
+      } catch (refreshError) {
+        console.warn('Failed to refresh messages after starting conversation:', refreshError);
+        // Don't show error to user since message was sent successfully
+      }
+      
+      // Select the new conversation
+      const existingConv = conversations.find(conv => conv.userId === sentMessage.recipient?._id);
+      if (existingConv) {
+        setSelectedConversation({
+          ...existingConv,
+          messages: [...existingConv.messages, sentMessage],
+          lastMessage: sentMessage,
+          unreadCount: 0
+        });
       } else {
-        const err = await response.json().catch(() => ({}));
-        alert(err.message || 'Failed to start conversation');
+        setSelectedConversation({
+          userId: sentMessage.recipient._id,
+          user: sentMessage.recipient,
+          messages: [sentMessage],
+          lastMessage: sentMessage,
+          unreadCount: 0
+        });
       }
     } catch (error) {
       console.error('Error starting conversation:', error);
+      
+      // Only show error if message actually failed to send
+      if (error.message.includes('HTTP error') || error.message.includes('Failed to start conversation')) {
+        alert(error.message || 'Failed to start conversation. Please try again.');
+      }
     }
   };
 
@@ -193,22 +373,89 @@ const MessagingSystem = ({ userId, userRole }) => {
   };
 
   const markAsRead = async (messageId) => {
+    if (!messageId || !authToken) return;
+    
     try {
-      await fetch(`http://localhost:5001/api/messages/${messageId}/read`, {
-        method: 'PUT'
+      const response = await fetch(`${API_BASE}/api/messages/${messageId}/read`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Update local state to mark message as read
+      setMessages(prev => 
+        prev.map(msg => 
+          msg._id === messageId ? { ...msg, isRead: true } : msg
+        )
+      );
+      
+      // Update conversations to reflect read status
+      setConversations(prev => 
+        prev.map(conv => {
+          const updatedMessages = conv.messages.map(msg => 
+            msg._id === messageId ? { ...msg, isRead: true } : msg
+          );
+          
+          // Update unread count if needed
+          const unreadCount = updatedMessages.reduce(
+            (count, msg) => count + (msg.recipient?._id === userId && !msg.isRead ? 1 : 0), 
+            0
+          );
+          
+          return {
+            ...conv,
+            messages: updatedMessages,
+            unreadCount,
+            lastMessage: 
+              conv.lastMessage?._id === messageId 
+                ? { ...conv.lastMessage, isRead: true } 
+                : conv.lastMessage
+          };
+        })
+      );
+      
+      // Update selected conversation if active
+      if (selectedConversation) {
+        setSelectedConversation(prev => {
+          const updatedMessages = prev.messages.map(msg => 
+            msg._id === messageId ? { ...msg, isRead: true } : msg
+          );
+          
+          return {
+            ...prev,
+            messages: updatedMessages,
+            unreadCount: updatedMessages.reduce(
+              (count, msg) => count + (msg.recipient?._id === userId && !msg.isRead ? 1 : 0), 
+              0
+            ),
+            lastMessage: 
+              prev.lastMessage?._id === messageId 
+                ? { ...prev.lastMessage, isRead: true } 
+                : prev.lastMessage
+          };
+        });
+      }
     } catch (error) {
       console.error('Error marking message as read:', error);
+      // Don't show error to user for read receipts
     }
   };
 
   const selectConversation = (conversation) => {
+    console.log('Selecting conversation:', conversation);
+    console.log('Conversation messages:', conversation.messages);
     setSelectedConversation(conversation);
     setShowNewChat(false);
     
     // Mark unread messages as read
     conversation.messages.forEach(msg => {
-      if (!msg.isRead && msg.recipient._id === userId) {
+      if (!msg.isRead && msg.recipient?._id === userId) {
         markAsRead(msg._id);
       }
     });
@@ -244,38 +491,47 @@ const MessagingSystem = ({ userId, userRole }) => {
         </div>
         
         <div className="conversations-list">
-          {conversations.map(conv => (
-            <div 
-              key={conv.userId}
-              className={`conversation-item ${selectedConversation?.userId === conv.userId ? 'active' : ''}`}
-              onClick={() => selectConversation(conv)}
-            >
-              <div className="conversation-info">
-                <div className="conversation-header">
-                  <span className="user-name">
-                    {conv.user.profile?.name || conv.user.email}
-                  </span>
-                  <span className="user-role">{conv.user.role}</span>
-                  {conv.unreadCount > 0 && (
-                    <span className="unread-badge">{conv.unreadCount}</span>
-                  )}
-                </div>
-                {conv.lastMessage && (
-                  <div className="last-message">
-                    <span className="message-preview">
-                      {conv.lastMessage.content.length > 50 
-                        ? conv.lastMessage.content.substring(0, 50) + '...'
-                        : conv.lastMessage.content
-                      }
-                    </span>
-                    <span className="message-time">
-                      {formatTime(conv.lastMessage.createdAt)}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {conversations.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+              No conversations yet. Start a new chat!
             </div>
-          ))}
+          ) : (
+            conversations.map(conv => (
+              <div 
+                key={conv.userId}
+                className={`conversation-item ${selectedConversation?.userId === conv.userId ? 'active' : ''}`}
+                onClick={() => selectConversation(conv)}
+              >
+                <div className="conversation-info">
+                  <div className="conversation-header">
+                    <span className="user-name">
+                      {conv.user.profile?.name || conv.user.name || conv.user.email}
+                    </span>
+                    <span className="user-role">{conv.user.role}</span>
+                    {conv.unreadCount > 0 && (
+                      <span className="unread-badge">{conv.unreadCount}</span>
+                    )}
+                  </div>
+                  {conv.lastMessage && (
+                    <div className="last-message">
+                      <span className="message-preview">
+                        {conv.lastMessage.content.length > 50 
+                          ? conv.lastMessage.content.substring(0, 50) + '...'
+                          : conv.lastMessage.content
+                        }
+                      </span>
+                      <span className="message-time">
+                        {formatTime(conv.lastMessage.createdAt)}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                    {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -343,21 +599,28 @@ const MessagingSystem = ({ userId, userRole }) => {
             </div>
             
             <div className="messages-container">
-              {selectedConversation.messages
-                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-                .map(msg => (
-                <div 
-                  key={msg._id} 
-                  className={`message ${msg.sender._id === userId ? 'sent' : 'received'}`}
-                >
-                  <div className="message-content">
-                    <p>{msg.content}</p>
-                    <span className="message-timestamp">
-                      {formatTime(msg.createdAt)}
-                    </span>
-                  </div>
+              {selectedConversation.messages.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#666', padding: '20px' }}>
+                  No messages yet. Start the conversation!
                 </div>
-              ))}
+              ) : (
+                selectedConversation.messages.map(msg => {
+                  console.log('Rendering message:', msg);
+                  return (
+                    <div 
+                      key={msg._id} 
+                      className={`message ${msg.sender?._id === userId ? 'sent' : 'received'}`}
+                    >
+                      <div className="message-content">
+                        <p>{msg.content}</p>
+                        <span className="message-timestamp">
+                          {formatTime(msg.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
             
             <div className="message-input-area">

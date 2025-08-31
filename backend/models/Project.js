@@ -38,6 +38,6 @@ const projectSchema = new mongoose.Schema({
   }],
   requiredTasksCount: { type: Number, default: 0 }, // Number of tasks required for project completion
   progressPercentage: { type: Number, default: 0, min: 0, max: 100 }
-}, { timestamps: true, collection: 'Projects' });
+}, { timestamps: true });
 
-export default mongoose.model('Project', projectSchema);
+export default mongoose.model('Project', projectSchema, 'Projects');

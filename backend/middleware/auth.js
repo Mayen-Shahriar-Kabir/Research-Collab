@@ -1,8 +1,25 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/model.js';
 
-// Optional auth: if Authorization header present, set req.user; otherwise continue
-export default function optionalAuth(req, res, next) {
+// Required authentication middleware
+export const authenticateToken = (req, res, next) => {
+  try {
+    const auth = req.headers['authorization'] || req.headers['Authorization'];
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    
+    const token = auth.slice(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    req.user = { id: decoded.id, role: decoded.role };
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+};
+
+// Named export for optionalAuth
+export const optionalAuth = (req, res, next) => {
   try {
     const auth = req.headers['authorization'] || req.headers['Authorization'];
     if (!auth || !auth.startsWith('Bearer ')) return next();
@@ -14,7 +31,10 @@ export default function optionalAuth(req, res, next) {
     // Ignore invalid token to keep optional behavior
   }
   next();
-}
+};
+
+// Default export for backward compatibility
+export default optionalAuth;
 
 // Middleware to check if user is frozen
 export const checkFrozenStatus = async (req, res, next) => {

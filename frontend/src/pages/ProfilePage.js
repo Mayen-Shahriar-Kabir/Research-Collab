@@ -1,13 +1,12 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import ProfileManager from '../components/ProfileManager';
 
-const ProfilePage = ({ userId, user }) => {
-  console.log('ProfilePage props:', { userId, user });
-  console.log('User ID from user object:', user?.id);
-  console.log('User ID from user._id:', user?._id);
+const ProfilePage = () => {
+  const { currentUser: user } = useAuth();
   
-  // Use user.id or user._id as fallback
-  const actualUserId = userId || user?.id || user?._id;
+  // Use user.id (backend sends id, not _id)
+  const actualUserId = user?.id;
   console.log('Actual userId being passed to ProfileManager:', actualUserId);
   
   return (

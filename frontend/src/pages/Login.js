@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from '../context/AuthContext';
 
-export default function Login({ setUser }) {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { login } = useAuth();
+  
   // Normalize API base to avoid double /api or trailing slashes
   const API_BASE = ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
     .replace(/\/$/, '')
@@ -20,27 +23,20 @@ export default function Login({ setUser }) {
 
     try {
       const res = await axios.post(
-        `${API_BASE}/api/login`, // use configurable API base
+        `${API_BASE}/api/auth/login`,
         { email, password },
         { withCredentials: true }
       );
 
       console.log('Login response:', res.data);
       
-      // store user info in state and persist to localStorage
-      setUser(res.data.user);
-      try {
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-        // Store JWT token if provided
-        if (res.data.token) {
-          localStorage.setItem('token', res.data.token);
-        }
-      } catch (e) {
-        // ignore storage errors
+      // Use the login function from AuthContext
+      if (res.data.token && res.data.user) {
+        await login(res.data.token, res.data.user);
+        navigate("/profile");
+      } else {
+        throw new Error('Invalid response from server');
       }
-
-      // redirect to Profile page for editing
-      navigate("/profile");
     } catch (err) {
       console.error('Login error:', err);
       console.error('Error response:', err.response?.data);

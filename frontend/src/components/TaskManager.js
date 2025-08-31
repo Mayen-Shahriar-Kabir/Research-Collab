@@ -48,14 +48,23 @@ const TaskManager = ({ userId, userRole, projectId, selectedTaskId }) => {
 
   const fetchTasks = async () => {
     try {
-      let url = `${API_BASE}/api/tasks?`;
-      if (projectId) url += `projectId=${projectId}`;
-      else if (userId) url += `userId=${userId}`;
-      
       const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      let url = `${API_BASE}/api/tasks`;
+      // For students, don't pass userId in query - the backend will filter based on auth
+      // For faculty/admin, can optionally filter by projectId
+      if (userRole !== 'student' && projectId) {
+        url += `?projectId=${projectId}`;
+      }
+      
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
       
@@ -64,6 +73,8 @@ const TaskManager = ({ userId, userRole, projectId, selectedTaskId }) => {
         setTasks(data);
       } else if (response.status === 401) {
         navigate('/login');
+      } else {
+        console.error('Failed to fetch tasks:', response.status);
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -242,6 +253,11 @@ const TaskManager = ({ userId, userRole, projectId, selectedTaskId }) => {
   };
 
   const filteredTasks = tasks.filter(task => {
+    // For students, double-check they can only see their assigned tasks
+    if (userRole === 'student' && task.assignedTo && task.assignedTo._id !== userId) {
+      return false;
+    }
+    
     if (filter === 'all') return true;
     return task.status === filter;
   });

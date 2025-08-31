@@ -418,11 +418,14 @@ export const listRoleRequests = async (req, res) => {
 // Admin: list all users
 export const getUsers = async (req, res) => {
   try {
-    const { adminId } = req.query;
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can list users' });
     }
+
     const users = await User.find({}, { name: 1, email: 1, role: 1, roleRequest: 1 });
     res.status(200).json({ users });
   } catch (err) {
@@ -434,16 +437,19 @@ export const getUsers = async (req, res) => {
 // Admin: directly set a user's role
 export const setUserRole = async (req, res) => {
   try {
-    const { adminId, role } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can set roles' });
+    }
+
+    const { role } = req.body;
     const { userId } = req.params;
 
     if (!['student', 'faculty', 'admin'].includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
-    }
-
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
-      return res.status(403).json({ message: 'Only admin can set roles' });
     }
 
     const user = await User.findById(userId);
@@ -511,7 +517,11 @@ export const removeBookmark = async (req, res) => {
 // Get user's bookmarked projects
 export const getBookmarkedProjects = async (req, res) => {
   try {
-    const { userId } = req.params;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const userId = req.user.id;
     
     const user = await User.findById(userId).populate({
       path: 'bookmarks',
@@ -520,7 +530,7 @@ export const getBookmarkedProjects = async (req, res) => {
     
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    res.status(200).json({ bookmarks: user.bookmarks });
+    res.status(200).json(user.bookmarks || []);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
@@ -769,7 +779,43 @@ export const updateTaskStatus = async (req, res) => {
 // Get tasks for a project
 export const getProjectTasks = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { projectId } = req.params;
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
+    
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Authorization checks
+    if (currentUserRole === 'student') {
+      // Students can only see project tasks if they're part of the project
+      if (!project.currentStudents.includes(currentUserId)) {
+        return res.status(403).json({ message: 'Access denied - you are not part of this project' });
+      }
+      
+      // Students can only see tasks assigned to them within this project
+      const tasks = await Task.find({ 
+        project: projectId,
+        assignedTo: currentUserId 
+      })
+        .populate('assignedTo', 'name email')
+        .populate('createdBy', 'name email')
+        .sort({ createdAt: -1 });
+
+      return res.status(200).json({ tasks });
+    } else if (currentUserRole === 'faculty') {
+      // Faculty can only see tasks for their own projects
+      if (project.faculty.toString() !== currentUserId) {
+        return res.status(403).json({ message: 'Access denied - not your project' });
+      }
+    }
+    // Admin can see all project tasks
     
     const tasks = await Task.find({ project: projectId })
       .populate('assignedTo', 'name email')
@@ -786,7 +832,30 @@ export const getProjectTasks = async (req, res) => {
 // Get tasks assigned to a student
 export const getStudentTasks = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { studentId } = req.params;
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
+    
+    // Students can only access their own tasks
+    if (currentUserRole === 'student' && studentId !== currentUserId) {
+      return res.status(403).json({ message: 'Access denied - you can only view your own tasks' });
+    }
+    
+    // Faculty can only view tasks for students in their projects
+    if (currentUserRole === 'faculty') {
+      const facultyProjects = await Project.find({ faculty: currentUserId }).select('_id currentStudents');
+      const isStudentInFacultyProject = facultyProjects.some(project => 
+        project.currentStudents.includes(studentId)
+      );
+      
+      if (!isStudentInFacultyProject) {
+        return res.status(403).json({ message: 'Access denied - student not in your projects' });
+      }
+    }
     
     const tasks = await Task.find({ assignedTo: studentId })
       .populate('project', 'title')
@@ -818,13 +887,12 @@ const createNotification = async (notificationData) => {
 // Get notifications for a user
 export const getUserNotifications = async (req, res) => {
   try {
-    // Handle both query parameter (?userId=...) and path parameter (/:userId)
-    const userId = req.params.userId || req.query.userId;
-    const { page = 1, limit = 20 } = req.query;
-    
-    if (!userId) {
-      return res.status(400).json({ message: 'userId is required' });
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
     }
+
+    const userId = req.user.id;
+    const { page = 1, limit = 20 } = req.query;
     
     const notifications = await Notification.find({ user: userId })
       .sort({ createdAt: -1 })
@@ -852,12 +920,44 @@ export const markNotificationRead = async (req, res) => {
   }
 };
 
+// Mark notification as unread
+export const markNotificationUnread = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    
+    await Notification.findByIdAndUpdate(notificationId, { read: false, readAt: undefined });
+    
+    res.status(200).json({ message: 'Notification marked as unread' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Delete notification
+export const deleteNotification = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    
+    await Notification.findByIdAndDelete(notificationId);
+    
+    res.status(200).json({ message: 'Notification deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Mark all notifications as read
 export const markAllNotificationsRead = async (req, res) => {
   try {
-    const { userId } = req.params;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const userId = req.user.id;
     
-    await Notification.updateMany({ user: userId }, { read: true });
+    await Notification.updateMany({ user: userId }, { read: true, readAt: new Date() });
     
     res.status(200).json({ message: 'All notifications marked as read' });
   } catch (err) {
@@ -1385,13 +1485,41 @@ export const updateTimelineExtensionStatus = async (req, res) => {
 // Get tasks with query parameters (general endpoint)
 export const getTasks = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { userId, projectId } = req.query;
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
     let query = {};
 
-    if (projectId) {
-      query.project = projectId;
-    } else if (userId) {
-      query.assignedTo = userId;
+    // Role-based filtering
+    if (currentUserRole === 'student') {
+      // Students can only see tasks assigned to them
+      query.assignedTo = currentUserId;
+    } else if (currentUserRole === 'faculty') {
+      // Faculty can see tasks in their projects
+      if (projectId) {
+        // Verify faculty owns this project
+        const project = await Project.findById(projectId);
+        if (!project || project.faculty.toString() !== currentUserId) {
+          return res.status(403).json({ message: 'Access denied to this project' });
+        }
+        query.project = projectId;
+      } else {
+        // Get all tasks from faculty's projects
+        const facultyProjects = await Project.find({ faculty: currentUserId }).select('_id');
+        const projectIds = facultyProjects.map(p => p._id);
+        query.project = { $in: projectIds };
+      }
+    } else if (currentUserRole === 'admin') {
+      // Admin can see all tasks
+      if (projectId) {
+        query.project = projectId;
+      } else if (userId) {
+        query.assignedTo = userId;
+      }
     }
 
     const tasks = await Task.find(query)
@@ -1528,7 +1656,7 @@ export const getProjectApplications = async (req, res) => {
     }
 
     const applications = await Application.find({ project: projectId })
-      .populate('student', 'name email academicInterests publications')
+      .populate('student', 'name email cgpa institution program department academicInterests publications profilePhoto role')
       .sort({ createdAt: -1 });
 
     res.status(200).json({ applications });
@@ -1657,12 +1785,15 @@ export const getProjectStudents = async (req, res) => {
 // Admin: create computer
 export const createComputer = async (req, res) => {
   try {
-    const { adminId, name, location, specs, status, tags } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can add computers' });
     }
+
+    const { name, location, specs, status, tags } = req.body;
 
     const comp = new Computer({
       name,
@@ -1670,7 +1801,7 @@ export const createComputer = async (req, res) => {
       specs: specs || '',
       status: status || 'active',
       tags: Array.isArray(tags) ? tags : [],
-      createdBy: adminId
+      createdBy: req.user.id
     });
 
     await comp.save();
@@ -1684,13 +1815,16 @@ export const createComputer = async (req, res) => {
 // Admin: update computer
 export const updateComputer = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { adminId, name, location, specs, status, tags } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can update computers' });
     }
+
+    const { id } = req.params;
+    const { name, location, specs, status, tags } = req.body;
 
     const comp = await Computer.findById(id);
     if (!comp) return res.status(404).json({ message: 'Computer not found' });
@@ -1726,7 +1860,12 @@ export const listComputers = async (req, res) => {
 // Student: create PC request
 export const createPcRequest = async (req, res) => {
   try {
-    const { studentId, desiredStart, desiredEnd, purpose, preferredComputer } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const { desiredStart, desiredEnd, purpose, preferredComputer } = req.body;
+    const studentId = req.user.id;
 
     const student = await User.findById(studentId);
     if (!student || student.role !== 'student') {
@@ -1777,7 +1916,11 @@ export const createPcRequest = async (req, res) => {
 // Student: list own PC requests
 export const listMyPcRequests = async (req, res) => {
   try {
-    const { studentId } = req.query;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const studentId = req.user.id;
     const student = await User.findById(studentId);
     if (!student || student.role !== 'student') {
       return res.status(403).json({ message: 'Only students can view their requests' });
@@ -1796,7 +1939,12 @@ export const listMyPcRequests = async (req, res) => {
 // Admin: list PC requests (optionally by status)
 export const listPcRequests = async (req, res) => {
   try {
-    const { adminId, status } = req.query;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const { status } = req.query;
+    const adminId = req.user.id;
     const admin = await User.findById(adminId);
     if (!admin || admin.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can view PC requests' });
@@ -1827,15 +1975,101 @@ const hasOverlap = async (computerId, start, end) => {
 };
 
 // Admin: approve PC request with allocation
+// Admin: direct PC allocation to user
+export const allocatePcToUser = async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admin can allocate PCs' });
+    }
+
+    const { userId, computerId, startTime, endTime, purpose } = req.body;
+
+    if (!userId || !computerId || !startTime || !endTime) {
+      return res.status(400).json({ message: 'All allocation fields are required' });
+    }
+
+    // Validate user exists and is a student
+    const student = await User.findById(userId);
+    if (!student) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (student.role !== 'student') {
+      return res.status(400).json({ message: 'Can only allocate PCs to students' });
+    }
+
+    // Validate computer exists and is active
+    const computer = await Computer.findById(computerId);
+    if (!computer || computer.status !== 'active') {
+      return res.status(400).json({ message: 'Computer not available' });
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    if (!(start instanceof Date) || isNaN(start) || !(end instanceof Date) || isNaN(end) || start >= end) {
+      return res.status(400).json({ message: 'Invalid allocation time' });
+    }
+
+    // Check overlap
+    const overlap = await hasOverlap(computerId, start, end);
+    if (overlap) {
+      return res.status(409).json({ message: 'Time slot overlaps with an existing allocation' });
+    }
+
+    // Create a new PC request and approve it immediately
+    const newRequest = new PcRequest({
+      student: userId,
+      purpose: purpose || 'Admin direct allocation',
+      desiredStart: start,
+      desiredEnd: end,
+      status: 'approved',
+      computer: computerId,
+      slotStart: start,
+      slotEnd: end,
+      adminNote: 'Direct admin allocation'
+    });
+
+    await newRequest.save();
+
+    // Notify student
+    await createNotification({
+      user: userId,
+      type: 'system',
+      title: 'PC Allocated',
+      body: `A PC has been allocated to you. Computer: ${computer.name}, Slot: ${start.toLocaleString()} - ${end.toLocaleString()}`,
+      link: `/pc-requests`
+    });
+
+    res.json({ 
+      message: 'PC allocated successfully',
+      allocation: {
+        student: student.name,
+        computer: computer.name,
+        startTime: start,
+        endTime: end
+      }
+    });
+  } catch (error) {
+    console.error('Error allocating PC:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 export const approvePcRequest = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const { adminId, computerId, slotStart, slotEnd, adminNote } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can approve PC requests' });
     }
+
+    const { requestId } = req.params;
+    const { computerId, slotStart, slotEnd, adminNote } = req.body;
 
     const request = await PcRequest.findById(requestId).populate('student');
     if (!request) return res.status(404).json({ message: 'PC request not found' });
@@ -1870,7 +2104,7 @@ export const approvePcRequest = async (req, res) => {
       type: 'system',
       title: 'PC Request Approved',
       body: `Your PC request has been approved. Computer: ${computer.name}, Slot: ${start.toLocaleString()} - ${end.toLocaleString()}`,
-      link: `/pc-requests/${request._id}`
+      link: `/pc-requests`
     });
 
     res.status(200).json({ message: 'PC request approved', request });
@@ -1883,13 +2117,16 @@ export const approvePcRequest = async (req, res) => {
 // Admin: reject PC request
 export const rejectPcRequest = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const { adminId, adminNote } = req.body;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only admin can reject PC requests' });
     }
+
+    const { requestId } = req.params;
+    const { adminNote } = req.body;
 
     const request = await PcRequest.findById(requestId).populate('student');
     if (!request) return res.status(404).json({ message: 'PC request not found' });

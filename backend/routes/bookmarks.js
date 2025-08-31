@@ -4,7 +4,7 @@ import { bookmarkProject, removeBookmark, getBookmarkedProjects } from '../contr
 const router = express.Router();
 
 // Get user's bookmarked projects
-router.get('/:userId', getBookmarkedProjects);
+router.get('/', getBookmarkedProjects);
 
 // Add bookmark
 router.post('/', bookmarkProject);

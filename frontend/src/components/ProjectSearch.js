@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import './ProjectSearch.css';
+import { useNavigate } from 'react-router-dom';
 
-const ProjectSearch = ({ userRole, userId }) => {
+const ProjectSearch = () => {
+  const { currentUser, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const userId = currentUser?._id || currentUser?.id;
+  const userRole = currentUser?.role;
   const [projects, setProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,10 +44,10 @@ const ProjectSearch = ({ userRole, userId }) => {
 
   useEffect(() => {
     fetchProjects();
-    if (userRole === 'student' && userId) {
+    if (isAuthenticated && userRole === 'student' && userId) {
       fetchBookmarks();
     }
-  }, [userRole, userId]);
+  }, [isAuthenticated, userRole, userId]);
 
   useEffect(() => {
     applyFilters();
@@ -50,10 +56,10 @@ const ProjectSearch = ({ userRole, userId }) => {
   const fetchProjects = async () => {
     try {
       const response = await fetch('http://localhost:5001/api/projects');
-      const isJson = (response.headers.get('content-type') || '').includes('application/json');
       if (response.ok) {
-        const data = isJson ? await response.json() : await response.text();
-        const projectsArray = Array.isArray(data) ? data : [];
+        const data = await response.json();
+        // Handle new API response format with success and data fields
+        const projectsArray = data.success ? data.data : (Array.isArray(data) ? data : []);
         setProjects(projectsArray);
         
         // Extract unique faculty for filters
@@ -61,8 +67,8 @@ const ProjectSearch = ({ userRole, userId }) => {
         
         setUniqueFaculty(faculty.sort());
       } else {
-        const data = isJson ? await response.json() : await response.text();
-        console.error('Error fetching projects:', data);
+        const errorData = await response.json();
+        console.error('Error fetching projects:', errorData);
       }
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -104,25 +110,77 @@ const ProjectSearch = ({ userRole, userId }) => {
   };
 
   const applyToProject = async (projectId) => {
+    if (!isAuthenticated || !userId) {
+      alert('Please log in to apply for projects');
+      navigate('/login');
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Authentication token not found. Please log in again.');
+      navigate('/login');
+      return;
+    }
+
     try {
+      console.log('Sending application with userId:', userId, 'projectId:', projectId);
+      
+      // Create application data with required fields
+      const applicationData = {
+        student: userId,
+        project: projectId,
+        message: 'I am interested in joining this research project.',
+        cvUrl: '',  // Required by backend schema
+        sampleWorkUrl: ''  // Required by backend schema
+      };
+
+      console.log('Sending application data:', JSON.stringify(applicationData, null, 2));
+      
       const response = await fetch('http://localhost:5001/api/applications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          student: userId,
-          project: projectId,
-          message: 'I am interested in joining this research project.'
-        }),
+        body: JSON.stringify(applicationData),
+        credentials: 'include'
       });
-      const isJson = (response.headers.get('content-type') || '').includes('application/json');
-      const data = isJson ? await response.json() : await response.text();
-      if (response.ok) {
-        alert('Application submitted successfully!');
-      } else {
-        const msg = (isJson && data?.message) || (typeof data === 'string' ? data : 'Error submitting application');
-        alert(msg);
+      
+      console.log('Application response status:', response.status);
+      
+      let responseText;
+      try {
+        responseText = await response.text();
+        console.log('Raw response:', responseText);
+        
+        let data;
+        try {
+          data = responseText ? JSON.parse(responseText) : null;
+        } catch (e) {
+          console.error('Failed to parse JSON response:', e);
+          throw new Error(`Invalid JSON response: ${responseText}`);
+        }
+        
+        if (response.ok) {
+          console.log('Application successful:', data);
+          alert('Application submitted successfully!');
+          fetchProjects(); // Refresh projects
+        } else {
+          const errorMessage = data?.message || 
+                             data?.error || 
+                             `Server error: ${response.status} ${response.statusText}`;
+          console.error('Application failed:', { status: response.status, data });
+          throw new Error(errorMessage);
+        }
+      } catch (error) {
+        console.error('Error processing response:', {
+          status: response.status,
+          statusText: response.statusText,
+          response: responseText,
+          error: error.message
+        });
+        throw error;
       }
     } catch (error) {
       console.error('Error applying to project:', error);

@@ -11,6 +11,10 @@ const ProjectManagement = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [feedbackMap, setFeedbackMap] = useState({});
+  const [showCgpaModal, setShowCgpaModal] = useState(false);
+  const [cgpaRange, setCgpaRange] = useState({ min: '', max: '' });
+  const [cgpaFilter, setCgpaFilter] = useState({ min: '', max: '' });
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Form states
   const [editMode, setEditMode] = useState(false);
@@ -42,56 +46,188 @@ const ProjectManagement = ({ user }) => {
     deadline: ''
   });
 
+  // Get user info from props or localStorage
+  React.useEffect(() => {
+    console.log('ProjectManagement useEffect triggered with user:', user);
+    if (user && (user._id || user.id)) {
+      console.log('Setting current user and fetching projects for user ID:', user._id || user.id);
+      setCurrentUser(user);
+    } else {
+      // Try to get user from localStorage if not passed as prop
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          console.log('Using stored user:', parsedUser);
+          setCurrentUser(parsedUser);
+        } catch (e) {
+          console.error('Failed to parse stored user:', e);
+        }
+      } else {
+        console.log('No user or user._id found:', user);
+      }
+    }
+  }, [user]);
+
+  // Fetch projects when currentUser is set
+  React.useEffect(() => {
+    if (currentUser && (currentUser._id || currentUser.id)) {
+      console.log('Current user set, now fetching projects for:', currentUser._id || currentUser.id);
+      setError(''); // Clear any existing errors before fetching
+      fetchProjects();
+    }
+  }, [currentUser]);
+
   // Normalize API base and derive apiUrl
   const API_BASE = ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
     .replace(/\/$/, '')
     .replace(/\/api$/, ''));
   const apiUrl = `${API_BASE}/api`;
   const token = localStorage.getItem('token');
-  const userId = user?.id;
+  const userId = currentUser?.id || currentUser?._id;
+  
+  console.log('Current API setup:', { API_BASE, apiUrl, hasToken: !!token, userId });
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    if (userId) {
+      fetchProjects();
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (selectedProject) {
       fetchProjectData();
     }
-  }, [selectedProject]);
+  }, [selectedProject, cgpaFilter]);
 
   const fetchProjects = async () => {
     try {
+      console.log('=== fetchProjects CALLED ===');
+      console.log('Current user state:', currentUser);
+      console.log('User ID for API call:', userId);
       setLoading(true);
-      const response = await fetch(`${apiUrl}/projects`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      setError('');
+      console.log('Fetching projects from:', `${apiUrl}/projects`);
+      const token = localStorage.getItem('token');
+      console.log('Using auth token:', token ? 'Token exists' : 'No token found');
+      
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      // Test basic API connectivity first
+      console.log('=== Testing API connectivity ===');
+      try {
+        const testResponse = await fetch(`${apiUrl}/projects`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        console.log('API test response status:', testResponse.status);
+        console.log('API test response ok:', testResponse.ok);
+        
+        if (!testResponse.ok) {
+          throw new Error(`API test failed: ${testResponse.status} ${testResponse.statusText}`);
+        }
+        
+        const testResult = await testResponse.json();
+        console.log('API test result:', testResult);
+      } catch (apiError) {
+        console.error('API connectivity test failed:', apiError);
+        throw new Error(`Backend server connection failed: ${apiError.message}`);
+      }
+      
+      // Now fetch filtered projects
+      const url = new URL(`${apiUrl}/projects`);
+      if (userId) {
+        url.searchParams.append('facultyId', userId);
+      }
+      
+      console.log('Fetching filtered projects from URL:', url.toString());
+      console.log('Faculty ID being used:', userId);
+      
+      const response = await fetch(url.toString(), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        credentials: 'include'
       });
-      const data = await response.json();
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      
+      // Handle different API response formats
+      let projectsData = [];
+      if (Array.isArray(result)) {
+        projectsData = result;
+      } else if (result.data && Array.isArray(result.data)) {
+        projectsData = result.data;
+      } else if (result.projects && Array.isArray(result.projects)) {
+        projectsData = result.projects;
+      } else {
+        projectsData = [];
+      }
       
       // Debug logging
-      console.log('All projects:', data);
+      console.log('API Response:', result);
+      console.log('Parsed projects data:', projectsData);
       console.log('Current userId:', userId);
-      console.log('Projects with faculty info:', data.map(p => ({ 
-        title: p.title, 
-        facultyId: p.faculty?._id, 
-        facultyName: p.faculty?.name 
-      })));
+      console.log('Projects count:', projectsData.length);
+      console.log('Setting projects state with:', projectsData);
       
-      // Filter projects owned by current faculty
-      const myProjects = data.filter(project => 
-        project.faculty && (
-          project.faculty._id === userId || 
-          project.faculty._id.toString() === userId ||
-          project.faculty === userId ||
-          project.faculty.toString() === userId
-        )
-      );
+      if (projectsData.length > 0) {
+        console.log('Projects with faculty info:', projectsData.map(p => ({
+          id: p._id,
+          title: p.title, 
+          facultyId: p.faculty?._id, 
+          facultyName: p.faculty?.name,
+          rawFaculty: p.faculty
+        })));
+      } else {
+        console.log('No projects found. Possible reasons:');
+        console.log('1. No projects exist for this faculty');
+        console.log('2. Faculty ID mismatch');
+        console.log('3. Database connection issue');
+        console.log('4. API response format changed');
+      }
       
-      console.log('My projects:', myProjects);
-      setProjects(myProjects);
+      setProjects(projectsData);
+      setError(''); // Clear any previous errors since projects loaded successfully
+      console.log('Projects state updated. Current projects length:', projectsData.length);
+      if (projectsData.length > 0 && !selectedProject) {
+        setSelectedProject(projectsData[0]);
+        console.log('Selected first project:', projectsData[0].title);
+      }
     } catch (err) {
-      console.error('Error fetching projects:', err);
-      setError('Failed to fetch projects');
+      console.error('=== ERROR in fetchProjects ===');
+      console.error('Error object:', err);
+      console.error('Error message:', err.message);
+      console.error('Error stack:', err.stack);
+      console.error('Error name:', err.name);
+      
+      let errorMessage = 'Failed to fetch project data';
+      if (err.message.includes('Failed to fetch')) {
+        errorMessage = 'Backend server connection failed. Check if server is running on port 5001.';
+      } else if (err.message.includes('404')) {
+        errorMessage = 'API endpoint not found (404 error).';
+      } else if (err.message.includes('500')) {
+        errorMessage = 'Server error (500). Check backend logs.';
+      } else if (err.message.includes('No authentication token')) {
+        errorMessage = 'Authentication token missing. Please log in again.';
+      } else {
+        errorMessage = `Error: ${err.message}`;
+      }
+      
+      console.error('Setting error message:', errorMessage);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -163,38 +299,118 @@ const ProjectManagement = ({ user }) => {
     try {
       setLoading(true);
       
-      // Fetch applications
-      const appsResponse = await fetch(
-        `${apiUrl}/projects/${selectedProject._id}/applications?facultyId=${userId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      const appsData = await appsResponse.json();
-      console.log('Applications response:', appsData);
-      console.log('Applications with status:', appsData.applications?.map(app => ({ 
-        id: app._id, 
-        student: app.student?.name, 
-        status: app.status 
-      })));
-      setApplications(appsData.applications || []);
+      // Try each API call individually to identify which one fails
+      console.log('Fetching applications for project:', selectedProject._id);
+      try {
+        const appsUrl = new URL(`${apiUrl}/applications`);
+        appsUrl.searchParams.set('facultyId', userId);
+        appsUrl.searchParams.set('projectId', selectedProject._id);
+        if (cgpaFilter.min) appsUrl.searchParams.set('minCgpa', cgpaFilter.min);
+        if (cgpaFilter.max) appsUrl.searchParams.set('maxCgpa', cgpaFilter.max);
+        
+        console.log('Applications API URL:', appsUrl.toString());
+        
+        const appsResponse = await fetch(appsUrl.toString(), {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!appsResponse.ok) {
+          console.error('Applications API failed:', appsResponse.status, appsResponse.statusText);
+          const errorText = await appsResponse.text();
+          console.error('Applications API error response:', errorText);
+          setApplications([]);
+        } else {
+          const appsData = await appsResponse.json();
+          console.log('Raw applications response:', appsData);
+          
+          // Handle different response formats
+          let applicationsArray = [];
+          if (Array.isArray(appsData)) {
+            applicationsArray = appsData;
+          } else if (appsData.data && Array.isArray(appsData.data)) {
+            applicationsArray = appsData.data;
+          } else if (appsData.applications && Array.isArray(appsData.applications)) {
+            applicationsArray = appsData.applications;
+          }
+          
+          // Filter applications for the selected project
+          const projectApplications = applicationsArray.filter(app => 
+            app.project && (app.project._id === selectedProject._id || app.project === selectedProject._id)
+          );
+          setApplications(projectApplications);
+          console.log('Applications loaded:', projectApplications.length);
+        }
+      } catch (appErr) {
+        console.error('Applications fetch error:', appErr);
+        setApplications([]);
+      }
 
       // Fetch students
-      const studentsResponse = await fetch(
-        `${apiUrl}/projects/${selectedProject._id}/students?facultyId=${userId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      const studentsData = await studentsResponse.json();
-      setStudents(studentsData.students || []);
+      console.log('Fetching students for project:', selectedProject._id);
+      try {
+        const studentsResponse = await fetch(
+          `${apiUrl}/projects/${selectedProject._id}/students?facultyId=${userId}`,
+          { 
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            } 
+          }
+        );
+        
+        if (!studentsResponse.ok) {
+          console.error('Students API failed:', studentsResponse.status, studentsResponse.statusText);
+          const errorText = await studentsResponse.text();
+          console.error('Students API error response:', errorText);
+          setStudents([]);
+        } else {
+          const studentsData = await studentsResponse.json();
+          console.log('Students API response:', studentsData);
+          setStudents(studentsData.students || []);
+          console.log('Students loaded:', studentsData.students?.length || 0);
+        }
+      } catch (studErr) {
+        console.error('Students fetch error:', studErr);
+        setStudents([]);
+      }
 
       // Fetch tasks
-      const tasksResponse = await fetch(
-        `${apiUrl}/tasks/project/${selectedProject._id}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      const tasksData = await tasksResponse.json();
-      setTasks(tasksData.tasks || []);
+      console.log('Fetching tasks for project:', selectedProject._id);
+      try {
+        const tasksResponse = await fetch(
+          `${apiUrl}/tasks/project/${selectedProject._id}`,
+          { 
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            } 
+          }
+        );
+        
+        if (!tasksResponse.ok) {
+          console.error('Tasks API failed:', tasksResponse.status, tasksResponse.statusText);
+          const errorText = await tasksResponse.text();
+          console.error('Tasks API error response:', errorText);
+          setTasks([]);
+        } else {
+          const tasksData = await tasksResponse.json();
+          console.log('Tasks API response:', tasksData);
+          setTasks(tasksData.tasks || []);
+          console.log('Tasks loaded:', tasksData.tasks?.length || 0);
+        }
+      } catch (taskErr) {
+        console.error('Tasks fetch error:', taskErr);
+        setTasks([]);
+      }
+
+      console.log('All project data fetching completed');
 
     } catch (err) {
-      setError('Failed to fetch project data');
+      console.error('Error in fetchProjectData:', err);
+      // Don't set error for project data issues since main projects are working
     } finally {
       setLoading(false);
     }
@@ -251,6 +467,7 @@ const ProjectManagement = ({ user }) => {
   const handleApplicationAction = async (applicationId, status) => {
     try {
       setLoading(true);
+      setError('');
       const response = await fetch(`${apiUrl}/applications/${applicationId}/status`, {
         method: 'PUT',
         headers: {
@@ -263,15 +480,17 @@ const ProjectManagement = ({ user }) => {
         })
       });
 
+      const data = await response.json();
       if (response.ok) {
         fetchProjectData();
         alert(`Application ${status} successfully!`);
       } else {
-        const errorData = await response.json();
-        setError(errorData.message || `Failed to ${status} application`);
+        throw new Error(data.message || `Failed to ${status} application`);
       }
     } catch (err) {
-      setError(`Failed to ${status} application`);
+      console.error('Application action error:', err);
+      setError(err.message || `Failed to ${status} application`);
+      alert(err.message || `Failed to ${status} application`);
     } finally {
       setLoading(false);
     }
@@ -315,6 +534,7 @@ const ProjectManagement = ({ user }) => {
     }
   };
 
+
   const handleCreateProject = async (e) => {
     e.preventDefault();
     try {
@@ -353,6 +573,16 @@ const ProjectManagement = ({ user }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCgpaFilter = () => {
+    setCgpaFilter({ min: cgpaRange.min, max: cgpaRange.max });
+    setShowCgpaModal(false);
+  };
+
+  const clearCgpaFilter = () => {
+    setCgpaFilter({ min: '', max: '' });
+    setCgpaRange({ min: '', max: '' });
   };
 
   const renderOverview = () => (
@@ -501,7 +731,24 @@ const ProjectManagement = ({ user }) => {
 
   const renderApplications = () => (
     <div className="applications-section">
-      <h3>Project Applications</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h3>Project Applications</h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {(cgpaFilter.min || cgpaFilter.max) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '14px', color: '#666' }}>
+                CGPA: {cgpaFilter.min || '0'} - {cgpaFilter.max || '4.0'}
+              </span>
+              <button className="btn btn-sm btn-outline-secondary" onClick={clearCgpaFilter}>
+                Clear
+              </button>
+            </div>
+          )}
+          <button className="btn btn-primary" onClick={() => setShowCgpaModal(true)}>
+            Shortlist by CGPA
+          </button>
+        </div>
+      </div>
       {applications.length === 0 ? (
         <p>No applications yet.</p>
       ) : (
@@ -509,11 +756,98 @@ const ProjectManagement = ({ user }) => {
           {applications.map(app => (
             <div key={app._id} className="application-card">
               <div className="applicant-info">
-                <h4>{app.student?.name}</h4>
-                <p>{app.student?.email}</p>
-                <p><strong>Interests:</strong> {app.student?.academicInterests}</p>
-                <p><strong>Message:</strong> {app.message}</p>
-                <p><strong>Status:</strong> <span className={`status ${app.status}`}>{app.status}</span></p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0' }}>{app.student?.name}</h4>
+                    <p style={{ margin: '0', color: '#666', fontSize: '14px' }}>{app.student?.email}</p>
+                  </div>
+                  <span className={`status ${app.status}`} style={{ 
+                    padding: '4px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase'
+                  }}>{app.status}</span>
+                </div>
+
+                {/* Academic Details Grid */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
+                  gap: '8px',
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '6px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  {app.student?.cgpa && (
+                    <div>
+                      <strong style={{ color: '#495057', fontSize: '13px' }}>CGPA:</strong>
+                      <div style={{ color: '#28a745', fontWeight: 'bold', fontSize: '15px' }}>
+                        {app.student.cgpa.toFixed(2)}/4.0
+                      </div>
+                    </div>
+                  )}
+                  {app.student?.institution && (
+                    <div>
+                      <strong style={{ color: '#495057', fontSize: '13px' }}>Institution:</strong>
+                      <div style={{ fontSize: '14px', marginTop: '2px' }}>{app.student.institution}</div>
+                    </div>
+                  )}
+                  {app.student?.program && (
+                    <div>
+                      <strong style={{ color: '#495057', fontSize: '13px' }}>Program:</strong>
+                      <div style={{ fontSize: '14px', marginTop: '2px' }}>{app.student.program}</div>
+                    </div>
+                  )}
+                  {app.student?.department && (
+                    <div>
+                      <strong style={{ color: '#495057', fontSize: '13px' }}>Department:</strong>
+                      <div style={{ fontSize: '14px', marginTop: '2px' }}>{app.student.department}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Academic Interests */}
+                {app.student?.academicInterests && app.student.academicInterests.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <strong style={{ color: '#495057' }}>Academic Interests:</strong>
+                    <div style={{ marginTop: '4px' }}>
+                      {app.student.academicInterests.map((interest, idx) => (
+                        <span key={idx} style={{
+                          display: 'inline-block',
+                          backgroundColor: '#e3f2fd',
+                          color: '#1976d2',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          marginRight: '6px',
+                          marginBottom: '4px'
+                        }}>
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Application Message */}
+                {app.message && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <strong style={{ color: '#495057' }}>Application Message:</strong>
+                    <div style={{ 
+                      marginTop: '4px', 
+                      padding: '8px', 
+                      backgroundColor: '#fff3cd', 
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {app.message}
+                    </div>
+                  </div>
+                )}
               </div>
               {app.status === 'pending' && (
                 <div className="application-actions">
@@ -698,6 +1032,7 @@ const ProjectManagement = ({ user }) => {
     </div>
   );
 
+  // Main component return
   return (
     <div className="project-management">
       <div className="sidebar">
@@ -779,10 +1114,12 @@ const ProjectManagement = ({ user }) => {
         )}
 
         {loading && <p>Loading...</p>}
+        
+        
         {projects.length === 0 && !loading && !showCreateProject ? (
           <div className="no-projects">
             <p>No projects found.</p>
-            <p>Create your first project to get started!</p>
+            <p>Create your first project using the "+ New Project" button above.</p>
           </div>
         ) : (
           <div className="projects-list">
@@ -809,7 +1146,12 @@ const ProjectManagement = ({ user }) => {
           </div>
         )}
 
-        {selectedProject ? (
+        {!userId ? (
+          <div className="no-user">
+            <h2>Authentication Required</h2>
+            <p>Please log in to manage your projects.</p>
+          </div>
+        ) : selectedProject ? (
           <>
             <div className="project-header">
               <h1>{selectedProject.title}</h1>
@@ -848,6 +1190,79 @@ const ProjectManagement = ({ user }) => {
           </div>
         )}
       </div>
+
+      {/* CGPA Filter Modal */}
+      {showCgpaModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            minWidth: '400px',
+            maxWidth: '500px'
+          }}>
+            <h3 style={{ marginBottom: '16px' }}>Filter by CGPA Range</h3>
+            <div style={{ display: 'grid', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
+                  Minimum CGPA:
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="4"
+                  step="0.01"
+                  placeholder="e.g., 3.0"
+                  value={cgpaRange.min}
+                  onChange={(e) => setCgpaRange({ ...cgpaRange, min: e.target.value })}
+                  className="form-control"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
+                  Maximum CGPA:
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="4"
+                  step="0.01"
+                  placeholder="e.g., 4.0"
+                  value={cgpaRange.max}
+                  onChange={(e) => setCgpaRange({ ...cgpaRange, max: e.target.value })}
+                  className="form-control"
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => setShowCgpaModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleCgpaFilter}
+                  disabled={!cgpaRange.min && !cgpaRange.max}
+                >
+                  Apply Filter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

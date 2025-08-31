@@ -10,15 +10,17 @@ const router = express.Router();
 // Get all messages for a user
 router.get('/', async (req, res) => {
   try {
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ message: 'userId required' });
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
+    const userId = req.user.id;
     const messages = await Message.find({
       $or: [{ sender: userId }, { recipient: userId }]
     })
       .populate('sender', 'email role profile name')
       .populate('recipient', 'email role profile name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: 1 });
 
     res.json(messages);
   } catch (err) {
@@ -30,17 +32,29 @@ router.get('/', async (req, res) => {
 // Search users for starting a chat
 router.get('/search', async (req, res) => {
   try {
-    const { query = '', requesterId } = req.query;
-    if (!requesterId) return res.status(400).json({ message: 'requesterId required' });
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
+    const { query = '' } = req.query;
+    const requesterId = req.user.id;
     const requester = await User.findById(requesterId).select('role');
     if (!requester) return res.status(404).json({ message: 'Requester not found' });
 
     const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
-    const roleFilter = (requester.role === 'student')
-      ? { role: 'faculty' } // students can only search faculties to initiate
-      : {}; // faculty/admin can search anyone
+    let roleFilter = {};
+    if (requester.role === 'student') {
+      // Students can search faculties they have accepted applications with
+      const acceptedApplications = await Application.find({ 
+        student: requesterId, 
+        status: 'accepted' 
+      }).populate('project', 'faculty');
+      
+      const facultyIds = acceptedApplications.map(app => app.project.faculty);
+      roleFilter = { _id: { $in: facultyIds }, role: 'faculty' };
+    }
+    // Admin and faculty can search anyone
 
     const users = await User.find({
       _id: { $ne: requesterId },
@@ -64,9 +78,15 @@ router.get('/search', async (req, res) => {
 // Send a message
 router.post('/', async (req, res) => {
   try {
-    const { sender, recipient, content } = req.body;
-    if (!sender || !recipient || !content) {
-      return res.status(400).json({ message: 'sender, recipient, and content are required' });
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const { recipient, content } = req.body;
+    const sender = req.user.id;
+    
+    if (!recipient || !content) {
+      return res.status(400).json({ message: 'recipient and content are required' });
     }
 
     // Role-based permissions
@@ -79,26 +99,34 @@ router.post('/', async (req, res) => {
     }
 
     if (senderUser.role === 'student') {
-      // Students can only message after applying to a project of the recipient faculty,
+      // Students can only message faculty after being accepted to their project,
       // OR reply if the recipient has previously messaged them.
 
       // Allow reply if recipient has messaged the student before
       const hasIncoming = await Message.exists({ sender: recipient, recipient: sender });
 
       if (!hasIncoming) {
-        // Must be messaging a faculty and have an application to that faculty's project
+        // Must be messaging a faculty and have an ACCEPTED application to that faculty's project
         if (recipientUser.role !== 'faculty') {
-          return res.status(403).json({ message: 'Students can only message faculties after applying to their projects' });
+          return res.status(403).json({ message: 'Students can only message faculties after being accepted to their projects' });
         }
-        // Get projects owned by the faculty recipient
+        
+        // Check for accepted applications to faculty's projects
         const facultyProjects = await Project.find({ faculty: recipient }).select('_id');
         const projectIds = facultyProjects.map(p => p._id);
+        
         if (projectIds.length === 0) {
-          return res.status(403).json({ message: 'You must apply to one of this faculty’s projects before messaging' });
+          return res.status(403).json({ message: 'This faculty has no projects available' });
         }
-        const hasApplied = await Application.exists({ student: sender, project: { $in: projectIds } });
-        if (!hasApplied) {
-          return res.status(403).json({ message: 'You can message this faculty only after applying to their project' });
+        
+        const hasAcceptedApplication = await Application.exists({ 
+          student: sender, 
+          project: { $in: projectIds },
+          status: 'accepted'
+        });
+        
+        if (!hasAcceptedApplication) {
+          return res.status(403).json({ message: 'You can only message this faculty after being accepted to their project' });
         }
       }
     }
