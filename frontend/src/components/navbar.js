@@ -10,7 +10,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
   // Normalize API base to avoid double /api or trailing slashes
-  const API_BASE = ((process.env.REACT_APP_API_URL || 'http://localhost:5001')
+  const API_BASE = ((process.env.REACT_APP_API_URL || 'https://research-collab-t4m0.onrender.com')
     .replace(/\/$/, '')
     .replace(/\/api$/, ''));
 
@@ -28,7 +28,7 @@ export default function Navbar() {
     const load = async () => {
       const uid = user._id || user.id;
       try {
-        const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001').replace(/\/$/, '');
+        const API_BASE = (process.env.REACT_APP_API_URL || 'https://research-collab-t4m0.onrender.com').replace(/\/$/, '');
         const token = localStorage.getItem('token');
         const res = await fetch(`${API_BASE}/api/notifications?userId=${encodeURIComponent(uid)}`, {
           headers: {

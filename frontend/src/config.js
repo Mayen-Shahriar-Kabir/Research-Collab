@@ -1,5 +1,5 @@
 // API Configuration
-export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
+export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://research-collab-t4m0.onrender.com/api';
 
 // Other configuration constants
 export const config = {

@@ -143,7 +143,7 @@ const ProfileManager = ({ userId }) => {
     if (newPublication.url) formData.append('url', newPublication.url);
 
     try {
-      const res = await fetch(`http://localhost:5001/api/profile/${userId}/publications/upload`, {
+      const res = await fetch(`https://research-collab-t4m0.onrender.com/api/profile/${userId}/publications/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -275,7 +275,7 @@ const ProfileManager = ({ userId }) => {
     formData.append('profilePhoto', photoFile);
     
     try {
-      const response = await fetch(`http://localhost:5001/api/profile/${userId}/photo`, {
+      const response = await fetch(`https://research-collab-t4m0.onrender.com/api/profile/${userId}/photo`, {
         method: 'POST',
         body: formData,
       });
@@ -349,7 +349,7 @@ const ProfileManager = ({ userId }) => {
               {photoPreview ? (
                 <img src={photoPreview} alt="Preview" className="profile-photo-preview" />
               ) : profile.profile?.profilePhoto ? (
-                <img src={`http://localhost:5001${profile.profile.profilePhoto}`} alt="Profile" className="profile-photo" />
+                <img src={`https://research-collab-t4m0.onrender.com${profile.profile.profilePhoto}`} alt="Profile" className="profile-photo" />
               ) : (
                 <div className="photo-placeholder">
                   <span>📷</span>
@@ -535,7 +535,7 @@ const ProfileManager = ({ userId }) => {
                     </a>
                   )}
                   {pub.file && (
-                    <a href={`http://localhost:5001${pub.file}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 10 }}>
+                    <a href={`https://research-collab-t4m0.onrender.com${pub.file}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 10 }}>
                       Download File
                     </a>
                   )}
