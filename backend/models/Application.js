@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+//application schema
 const applicationSchema = new mongoose.Schema({
   student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },

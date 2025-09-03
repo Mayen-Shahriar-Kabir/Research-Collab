@@ -9,7 +9,8 @@ export default function NewProject({ user }) {
     domain: '',
     requirements: [''],
     maxStudents: 1,
-    deadline: ''
+    deadline: '',
+    availability: 'open'
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +47,7 @@ export default function NewProject({ user }) {
         maxStudents: Number(form.maxStudents) || 1,
         deadline: form.deadline ? new Date(form.deadline) : undefined,
         faculty: user.id,
+        availability: form.availability || 'open',
       };
       const res = await fetch('http://localhost:5001/api/projects', {
         method: 'POST',
@@ -137,6 +139,17 @@ export default function NewProject({ user }) {
             value={form.deadline}
             onChange={e => setForm({ ...form, deadline: e.target.value })}
           />
+        </div>
+        <div className="form-group">
+          <label>Availability</label>
+          <select
+            className="form-control"
+            value={form.availability || 'open'}
+            onChange={e => setForm({ ...form, availability: e.target.value })}
+          >
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </select>
         </div>
 
         <button disabled={submitting} className="btn btn-primary">

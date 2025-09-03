@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+//project schema
 const projectSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
@@ -7,6 +8,7 @@ const projectSchema = new mongoose.Schema({
   faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   requirements: [{ type: String }],
   status: { type: String, enum: ['available', 'in_progress', 'completed', 'closed'], default: 'available' },
+  availability: { type: String, enum: ['open', 'closed'], default: 'open' },
   maxStudents: { type: Number, default: 1 },
   currentStudents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   deadline: { type: Date },

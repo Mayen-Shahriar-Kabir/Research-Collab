@@ -84,6 +84,7 @@ router.post('/', async (req, res) => {
     const payload = {
       ...req.body,
       status: req.body.status || 'available',
+      availability: req.body.availability || 'open',
     };
 
     const project = await Project.create(payload);
